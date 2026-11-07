@@ -1,10 +1,108 @@
 configuration:
   config_file:
-    name: "Configuration file"
-    description: "Path to the detailed KAC configuration in the add-on configuration folder."
+    name: "Legacy configuration file"
+    description: "Used only for backward compatibility while no devices are configured in the UI."
   log_level:
     name: "Log level"
-    description: "Amount of detail written to the add-on log."
   dry_run:
     name: "Dry run"
     description: "Build and log pages without sending anything to KAC devices."
+  update_interval_seconds:
+    name: "Update interval"
+    description: "Seconds between updates; keep below 180 seconds."
+  text_mode:
+    name: "Text handling"
+  home_assistant_timeout_seconds:
+    name: "Home Assistant timeout"
+  entities:
+    name: "Home Assistant entities"
+    fields:
+      alias:
+        name: "Alias"
+      entity_id:
+        name: "Entity ID"
+  formats:
+    name: "Format templates"
+    fields:
+      name:
+        name: "Name"
+      template:
+        name: "Jinja template"
+  devices:
+    name: "KAC devices"
+    fields:
+      name:
+        name: "Device name"
+      host:
+        name: "Host or IP address"
+      key:
+        name: "KAC device key"
+      timeout_seconds:
+        name: "KAC timeout"
+      rotation_seconds:
+        name: "Seconds per page"
+      brightness_enabled:
+        name: "Override brightness"
+      brightness:
+        name: "Brightness"
+      timezone:
+        name: "POSIX time zone"
+      brightness_schedule_enabled:
+        name: "Send brightness schedule"
+      brightness_day:
+        name: "Day brightness"
+      brightness_night:
+        name: "Night brightness"
+      night_from:
+        name: "Night starts (hour)"
+      night_until:
+        name: "Night ends (hour)"
+      pages:
+        name: "Text pages"
+        fields:
+          title:
+            name: "Page title"
+          rows:
+            name: "Rows"
+            fields:
+              type:
+                name: "Row type"
+              label:
+                name: "Label"
+              entity:
+                name: "Entity alias"
+              format:
+                name: "Format template"
+              value:
+                name: "Value or value template"
+              percent:
+                name: "Percent or percent template"
+              alert:
+                name: "Alert or alert template"
+              history_points:
+                name: "History points"
+              scale_min:
+                name: "Scale minimum"
+              scale_max:
+                name: "Scale maximum"
+              values_csv:
+                name: "Fixed history values"
+      images:
+        name: "Image pages"
+        fields:
+          slot:
+            name: "Image slot"
+          source:
+            name: "Local image path"
+          fit:
+            name: "Fit"
+          upload:
+            name: "Upload behavior"
+          delete:
+            name: "Delete slot"
+          quality:
+            name: "JPG quality"
+          gif_colors:
+            name: "GIF colors"
+          gif_min_delay_ms:
+            name: "Minimum GIF frame time (ms)"

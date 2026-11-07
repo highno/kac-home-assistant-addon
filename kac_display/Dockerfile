@@ -9,7 +9,6 @@ RUN apk add --no-cache \
       py3-yaml
 
 COPY app /app/kac_bridge
-COPY examples/kac.yaml /app/example-kac.yaml
 COPY rootfs /
 
 RUN chmod a+x /etc/s6-overlay/s6-rc.d/kac-display/run

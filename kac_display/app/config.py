@@ -171,15 +171,9 @@ def _validate_images(images: Any, path: str) -> list[dict[str, Any]]:
     return result
 
 
-def load_config(path: str | Path) -> dict[str, Any]:
-    """Load a detailed config and return a normalized, validated mapping."""
-    config_path = Path(path).resolve()
-    try:
-        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise ConfigurationError(f"cannot read {config_path}: {exc}") from exc
-    except yaml.YAMLError as exc:
-        raise ConfigurationError(f"invalid YAML in {config_path}: {exc}") from exc
+def validate_config(raw: Any, config_dir: str | Path) -> dict[str, Any]:
+    """Normalize and validate configuration from a file or HA's options UI."""
+    base_dir = Path(config_dir).resolve()
     config = deepcopy(_mapping(raw, "configuration"))
 
     if config.get("version") != 1:
@@ -225,7 +219,7 @@ def load_config(path: str | Path) -> dict[str, Any]:
         host = device.get("host")
         if not isinstance(host, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", host):
             _fail(f"{path_prefix}.host", "must be an IP address or host name without http://, port, or path")
-        device["key"] = _read_key(device, config_path.parent, path_prefix)
+        device["key"] = _read_key(device, base_dir, path_prefix)
         device.pop("key_file", None)
         timeout = device.get("timeout_seconds", 10)
         _number_in(timeout, 1, 120, f"{path_prefix}.timeout_seconds")
@@ -285,8 +279,141 @@ def load_config(path: str | Path) -> dict[str, Any]:
     if not devices:
         _fail("devices", "at least one device is required")
     config["devices"] = devices
-    config["config_dir"] = str(config_path.parent)
+    config["config_dir"] = str(base_dir)
     return config
+
+
+def load_config(path: str | Path) -> dict[str, Any]:
+    """Load a legacy detailed YAML config and return a validated mapping."""
+    config_path = Path(path).resolve()
+    try:
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ConfigurationError(f"cannot read {config_path}: {exc}") from exc
+    except yaml.YAMLError as exc:
+        raise ConfigurationError(f"invalid YAML in {config_path}: {exc}") from exc
+    return validate_config(raw, config_path.parent)
+
+
+def _nonempty(mapping: dict[str, Any], key: str) -> Any | None:
+    value = mapping.get(key)
+    if isinstance(value, str):
+        return value if value.strip() else None
+    return value
+
+
+def config_from_options(options: dict[str, Any]) -> dict[str, Any]:
+    """Convert Home Assistant's graphical options into the internal config."""
+    entities: dict[str, str] = {}
+    for index, item in enumerate(_list(options.get("entities", []), "entities")):
+        item = _mapping(item, f"entities[{index}]")
+        alias = _nonempty(item, "alias")
+        entity_id = _nonempty(item, "entity_id")
+        if alias is None or entity_id is None:
+            _fail(f"entities[{index}]", "alias and entity_id are required")
+        if str(alias) in entities:
+            _fail(f"entities[{index}].alias", f"duplicate alias {alias!r}")
+        entities[str(alias)] = str(entity_id)
+
+    formats: dict[str, str] = {}
+    for index, item in enumerate(_list(options.get("formats", []), "formats")):
+        item = _mapping(item, f"formats[{index}]")
+        name = _nonempty(item, "name")
+        template = _nonempty(item, "template")
+        if name is None or template is None:
+            _fail(f"formats[{index}]", "name and template are required")
+        if str(name) in formats:
+            _fail(f"formats[{index}].name", f"duplicate format name {name!r}")
+        formats[str(name)] = str(template)
+
+    devices: list[dict[str, Any]] = []
+    for device_index, ui_device in enumerate(_list(options.get("devices", []), "devices")):
+        ui_device = _mapping(ui_device, f"devices[{device_index}]")
+        device: dict[str, Any] = {
+            "name": ui_device.get("name"),
+            "host": ui_device.get("host"),
+            "key": ui_device.get("key"),
+            "timeout_seconds": ui_device.get("timeout_seconds", 10),
+        }
+        settings: dict[str, Any] = {
+            "rotation_seconds": ui_device.get("rotation_seconds", 30)
+        }
+        if ui_device.get("brightness_enabled", False):
+            settings["brightness"] = ui_device.get("brightness", 80)
+        timezone = _nonempty(ui_device, "timezone")
+        if timezone is not None:
+            settings["timezone"] = timezone
+        if ui_device.get("brightness_schedule_enabled", False):
+            settings["brightness_schedule"] = {
+                "day": ui_device.get("brightness_day", 90),
+                "night": ui_device.get("brightness_night", 10),
+                "night_from": ui_device.get("night_from", 23),
+                "night_until": ui_device.get("night_until", 7),
+            }
+        device["settings"] = settings
+
+        pages: list[dict[str, Any]] = []
+        for page_index, ui_page in enumerate(_list(ui_device.get("pages", []), f"devices[{device_index}].pages")):
+            ui_page = _mapping(ui_page, f"devices[{device_index}].pages[{page_index}]")
+            rows: list[dict[str, Any]] = []
+            for row_index, ui_row in enumerate(_list(ui_page.get("rows", []), f"devices[{device_index}].pages[{page_index}].rows")):
+                row_path = f"devices[{device_index}].pages[{page_index}].rows[{row_index}]"
+                ui_row = _mapping(ui_row, row_path)
+                row: dict[str, Any] = {"type": ui_row.get("type")}
+                for key in ("label", "entity", "format", "value", "percent", "alert"):
+                    value = _nonempty(ui_row, key)
+                    if value is not None:
+                        row[key] = value
+                for key in ("history_points", "scale_min", "scale_max"):
+                    value = _nonempty(ui_row, key)
+                    if value is not None:
+                        row[key] = value
+                values_csv = _nonempty(ui_row, "values_csv")
+                if values_csv is not None:
+                    try:
+                        row["values"] = [
+                            float(value.strip())
+                            for value in str(values_csv).split(",")
+                            if value.strip()
+                        ]
+                    except ValueError as exc:
+                        _fail(f"{row_path}.values_csv", f"contains a non-numeric value: {exc}")
+                rows.append(row)
+            pages.append({"title": ui_page.get("title"), "rows": rows})
+        device["pages"] = pages
+
+        images: list[dict[str, Any]] = []
+        for image_index, ui_image in enumerate(_list(ui_device.get("images", []), f"devices[{device_index}].images")):
+            image_path = f"devices[{device_index}].images[{image_index}]"
+            ui_image = _mapping(ui_image, image_path)
+            image: dict[str, Any] = {
+                "slot": ui_image.get("slot"),
+                "delete": bool(ui_image.get("delete", False)),
+                "fit": ui_image.get("fit", "cover"),
+                "upload": ui_image.get("upload", "on_change"),
+                "quality": ui_image.get("quality", 90),
+                "gif_colors": ui_image.get("gif_colors", 64),
+                "gif_min_delay_ms": ui_image.get("gif_min_delay_ms", 100),
+            }
+            source = _nonempty(ui_image, "source")
+            if source is not None:
+                image["source"] = source
+            images.append(image)
+        device["images"] = images
+        devices.append(device)
+
+    raw = {
+        "version": 1,
+        "update_interval_seconds": options.get("update_interval_seconds", 10),
+        "text_mode": options.get("text_mode", "transliterate"),
+        "home_assistant": {
+            "timeout_seconds": options.get("home_assistant_timeout_seconds", 10)
+        },
+        "entities": entities,
+        "formats": formats,
+        "devices": devices,
+    }
+    return validate_config(raw, "/config")
 
 
 def kac_settings(settings: dict[str, Any]) -> dict[str, Any]:

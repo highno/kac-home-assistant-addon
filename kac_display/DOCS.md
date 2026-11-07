@@ -1,4 +1,4 @@
-# KAC Display Bridge – Installation und Konfiguration
+# KAC Display Bridge – Installation und grafische Konfiguration
 
 ## Ergebnis und Voraussetzungen
 
@@ -19,8 +19,8 @@ Voraussetzungen:
 2. `https://github.com/highno/kac-home-assistant-addon` als Repository hinzufügen.
 3. Alternativ den Installationsbutton in der Repository-README verwenden.
 4. **KAC Display Bridge** auswählen und installieren.
-5. Das Add-on einmal starten. Es legt `kac.yaml` im eigenen App-Konfigurationsordner an und beendet sich mit einer verständlichen Meldung.
-6. Die Datei `app_configs/<App-ID>/kac.yaml` mit File Editor, Samba oder SSH bearbeiten. Danach das Add-on neu starten.
+5. Auf der Registerkarte **Konfiguration** Entitäten, Vorlagen, Geräte, Seiten und Zeilen über die Formulare anlegen.
+6. Speichern und das Add-on starten.
 
 Für eine rein lokale Installation kann der Ordner `kac_display` in den lokalen Apps/Add-ons-Ordner der Home-Assistant-Installation kopiert und der App Store neu geladen werden.
 
@@ -28,44 +28,46 @@ Für eine rein lokale Installation kann der Ordner `kac_display` in den lokalen 
 
 | Option | Standard | Bedeutung |
 |---|---:|---|
-| `config_file` | `/config/kac.yaml` | Ausführliche YAML-Konfiguration im eigenen App-Konfigurationsordner |
+| `config_file` | `/config/kac.yaml` | Nur noch Rückwärtskompatibilität für bestehende Installationen ohne grafisch angelegte Geräte |
 | `log_level` | `info` | `debug`, `info`, `warning` oder `error` |
 | `dry_run` | `false` | Seiten nur erzeugen/protokollieren, nichts an KAC senden |
+| `update_interval_seconds` | `10` | Sekunden zwischen Übertragungen |
+| `text_mode` | `transliterate` | Behandlung nicht unterstützter Zeichen |
+| `home_assistant_timeout_seconds` | `10` | Zeitlimit beim Lesen der Entitäten |
+| `entities` | leer | Liste aus Alias und Home-Assistant-Entitäts-ID |
+| `formats` | leer | Benannte Jinja-Formatvorlagen |
+| `devices` | leer | KAC-Verbindungen einschließlich Seiten, Zeilen und Bilder |
 
-Geänderte Optionen oder eine geänderte `kac.yaml` werden nach einem Neustart des Add-ons eingelesen.
+Geänderte Optionen werden nach dem Speichern und einem Neustart des Add-ons eingelesen.
 
-## Schnellstart
+## Grafischer Schnellstart
 
-Die automatisch erzeugte Datei entspricht `examples/kac.yaml`. Mindestens diese Werte müssen angepasst werden:
+Die Listen auf der Konfigurationsseite besitzen jeweils eine Schaltfläche zum Hinzufügen. Die Reihenfolge ist wichtig, weil Seiten und Zeilen auf zuvor angelegte Aliase beziehungsweise Formatnamen verweisen:
 
-```yaml
-entities:
-  temperature: sensor.living_room_temperature
+1. Unter **Home-Assistant-Entitäten** einen Eintrag hinzufügen:
+   - Alias: `temperature`
+   - Entitäts-ID: `sensor.living_room_temperature`
+2. Optional unter **Formatvorlagen** einen Eintrag hinzufügen:
+   - Name: `temperature`
+   - Jinja-Vorlage: `{{ value | float(0) | round(1) }} °C`
+3. Unter **KAC-Geräte** ein Gerät hinzufügen:
+   - Gerätename, IP-Adresse, Geräteschlüssel, Zeitlimit und Rotationszeit eintragen.
+   - Optionale Helligkeitsfelder nur über die zugehörigen Schalter aktivieren.
+4. Innerhalb des Geräts unter **Textseiten** eine Seite hinzufügen.
+5. Innerhalb der Seite unter **Zeilen** eine Zeile hinzufügen:
+   - Zeilentyp: `big`
+   - Beschriftung: `Temperature`
+   - Entitätsalias: `temperature`
+   - Formatvorlage: `temperature`
+6. Leere, für den gewählten Zeilentyp nicht benötigte Felder bleiben leer.
 
-formats:
-  temperature: "{{ value | float(0) | round(1) }} °C"
+Mindestens ein Gerät und eine Textseite pro Gerät sind erforderlich. Entitätsalias und Formatname müssen exakt den zuvor angelegten Namen entsprechen.
 
-devices:
-  - name: living_room
-    host: 192.168.1.50
-    key: CHANGE-ME
-    pages:
-      - title: Home
-        rows:
-          - type: big
-            label: Temperature
-            entity: temperature
-            format: temperature
-    images: []
-```
+### Bestehende Installationen
 
-Der Geräteschlüssel darf alternativ in einer separaten Datei liegen:
+Version 0.2.0 liest eine vorhandene `kac.yaml` automatisch weiter, solange die grafische Liste **KAC-Geräte** leer ist. Sobald dort mindestens ein Gerät gespeichert wurde, verwendet das Add-on ausschließlich die grafische Konfiguration. Dadurch kann eine bestehende Installation ohne Unterbrechung schrittweise übertragen werden.
 
-```yaml
-key_file: secrets/living-room-kac.key
-```
-
-Relative Pfade werden relativ zu `kac.yaml` aufgelöst. Der Schlüssel muss gemäß KAC-Dokumentation 1–32 druckbare ASCII-Zeichen ohne Leerzeichen enthalten.
+Der Geräteschlüssel muss gemäß KAC-Dokumentation 1–32 druckbare ASCII-Zeichen ohne Leerzeichen enthalten.
 
 ## Entitäten und Vorlagen
 
@@ -193,7 +195,7 @@ Das Add-on lädt keine Bilder aus Home-Assistant-Kamera-/Media-Entitäten oder U
 
 - Die KAC-Schnittstelle verwendet dokumentiert nur unverschlüsseltes HTTP. Geräteschlüssel und Messwerte sind im lokalen Netz nicht transportverschlüsselt. KAC empfiehlt ein getrenntes IoT-Netz/VLAN.
 - `homeassistant_api: true` gibt einem Add-on über den Supervisor-Proxy Administratorrechte. Dieser Quellcode verwendet den Token ausschließlich für `GET /states`, aber der Token selbst ist entsprechend sensibel.
-- Schlüssel werden weder in normale Logs noch in gerenderte Seiten geschrieben. `kac.yaml` und optionale Schlüsseldateien gehören trotzdem geschützt und nicht in ein öffentliches Repository.
+- Schlüssel werden weder in normale Logs noch in gerenderte Seiten geschrieben. Home Assistant speichert grafisch eingegebene Schlüssel geschützt als Add-on-Option. Eine alte `kac.yaml` und optionale Schlüsseldateien gehören trotzdem nicht in ein öffentliches Repository.
 
 ## Offene bzw. bewusst nicht erfundene Punkte
 

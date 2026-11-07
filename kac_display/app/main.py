@@ -7,13 +7,12 @@ import logging
 import os
 from pathlib import Path
 import re
-import shutil
 import signal
 import sys
 import threading
 from typing import Any
 
-from .config import kac_settings, load_config
+from .config import config_from_options, kac_settings, load_config
 from .errors import BridgeError, ConfigurationError
 from .ha import HomeAssistantClient
 from .images import ImageSynchronizer
@@ -23,7 +22,6 @@ from .render import HistoryStore, PageRenderer
 
 LOGGER = logging.getLogger("kac_bridge")
 OPTIONS_PATH = Path("/data/options.json")
-EXAMPLE_PATH = Path("/app/example-kac.yaml")
 
 
 def _load_options() -> dict[str, Any]:
@@ -31,6 +29,12 @@ def _load_options() -> dict[str, Any]:
         "config_file": "/config/kac.yaml",
         "log_level": "info",
         "dry_run": False,
+        "update_interval_seconds": 10,
+        "text_mode": "transliterate",
+        "home_assistant_timeout_seconds": 10,
+        "entities": [],
+        "formats": [],
+        "devices": [],
     }
     try:
         raw = json.loads(OPTIONS_PATH.read_text(encoding="utf-8"))
@@ -41,19 +45,6 @@ def _load_options() -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ConfigurationError(f"{OPTIONS_PATH} must contain a JSON object")
     return dict(defaults, **raw)
-
-
-def _copy_example(config_path: Path) -> bool:
-    if config_path.exists():
-        return False
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        shutil.copyfile(EXAMPLE_PATH, config_path)
-    except OSError as exc:
-        raise ConfigurationError(
-            f"configuration is missing and example could not be created at {config_path}: {exc}"
-        ) from exc
-    return True
 
 
 def _version_tuple(value: Any) -> tuple[int, int, int] | None:
@@ -180,14 +171,25 @@ def main() -> int:
             level=getattr(logging, str(options["log_level"]).upper(), logging.INFO),
             format="%(asctime)s %(levelname)s %(message)s",
         )
-        config_path = Path(str(options["config_file"]))
-        if _copy_example(config_path):
-            LOGGER.error(
-                "created example configuration at %s; edit it, set the KAC host/key and entity IDs, then restart the add-on",
+        if options.get("devices"):
+            config = config_from_options(options)
+            LOGGER.info(
+                "using Home Assistant graphical configuration with %d device(s)",
+                len(config["devices"]),
+            )
+        else:
+            config_path = Path(str(options["config_file"]))
+            if not config_path.is_file():
+                raise ConfigurationError(
+                    "no devices are configured in the Home Assistant UI and no legacy "
+                    f"configuration exists at {config_path}; add a device on the add-on "
+                    "Configuration tab"
+                )
+            config = load_config(config_path)
+            LOGGER.warning(
+                "using legacy configuration file %s; add devices on the add-on Configuration tab to switch to graphical configuration",
                 config_path,
             )
-            return 2
-        config = load_config(config_path)
         bridge = Bridge(config, bool(options["dry_run"]))
         signal.signal(signal.SIGTERM, bridge.stop)
         signal.signal(signal.SIGINT, bridge.stop)

@@ -1,5 +1,5 @@
 name: "KAC Display Bridge"
-version: "0.1.0"
+version: "0.2.0"
 slug: "kac_display"
 description: "Show Home Assistant entities and images on KAC firmware displays"
 url: "https://github.com/highno/kac-home-assistant-addon/tree/main/kac_display"
@@ -18,7 +18,59 @@ options:
   config_file: "/config/kac.yaml"
   log_level: "info"
   dry_run: false
+  update_interval_seconds: 10
+  text_mode: "transliterate"
+  home_assistant_timeout_seconds: 10
+  entities: []
+  formats: []
+  devices: []
 schema:
   config_file: "str"
   log_level: "list(debug|info|warning|error)"
   dry_run: "bool"
+  update_interval_seconds: "int(1,3600)"
+  text_mode: "list(transliterate|strict)"
+  home_assistant_timeout_seconds: "int(1,120)"
+  entities:
+    - alias: "str"
+      entity_id: "str"
+  formats:
+    - name: "str"
+      template: "str"
+  devices:
+    - name: "str"
+      host: "str"
+      key: "password"
+      timeout_seconds: "int(1,120)"
+      rotation_seconds: "int(5,255)"
+      brightness_enabled: "bool?"
+      brightness: "int(0,100)?"
+      timezone: "str?"
+      brightness_schedule_enabled: "bool?"
+      brightness_day: "int(0,100)?"
+      brightness_night: "int(0,100)?"
+      night_from: "int(0,23)?"
+      night_until: "int(0,23)?"
+      pages:
+        - title: "str"
+          rows:
+            - type: "list(heading|value|down|up|bar|big|sparkline|empty)"
+              label: "str?"
+              entity: "str?"
+              format: "str?"
+              value: "str?"
+              percent: "str?"
+              alert: "str?"
+              history_points: "int(1,20)?"
+              scale_min: "float?"
+              scale_max: "float?"
+              values_csv: "str?"
+      images:
+        - slot: "int(1,5)"
+          source: "str?"
+          fit: "list(cover|contain)?"
+          upload: "list(on_change|startup)?"
+          delete: "bool?"
+          quality: "int(1,100)?"
+          gif_colors: "int(2,256)?"
+          gif_min_delay_ms: "int(20,60000)?"

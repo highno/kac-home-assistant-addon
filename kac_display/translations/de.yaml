@@ -1,10 +1,121 @@
 configuration:
   config_file:
-    name: "Konfigurationsdatei"
-    description: "Pfad zur ausführlichen KAC-Konfiguration im Add-on-Konfigurationsordner."
+    name: "Alte Konfigurationsdatei"
+    description: "Nur als Rückwärtskompatibilität verwendet, solange in der Oberfläche keine Geräte angelegt sind."
   log_level:
     name: "Protokollstufe"
     description: "Detailgrad der Add-on-Protokolle."
   dry_run:
     name: "Testlauf"
     description: "Seiten erzeugen und protokollieren, aber nichts an KAC-Geräte senden."
+  update_interval_seconds:
+    name: "Aktualisierungsintervall"
+    description: "Sekunden zwischen zwei Übertragungen. Unter 180 Sekunden bleiben."
+  text_mode:
+    name: "Textbehandlung"
+    description: "transliterate ersetzt Umlaute und nicht unterstützte Zeichen; strict meldet sie als Fehler."
+  home_assistant_timeout_seconds:
+    name: "Home-Assistant-Zeitlimit"
+    description: "Zeitlimit für das Lesen der Entitätszustände."
+  entities:
+    name: "Home-Assistant-Entitäten"
+    description: "Frei wählbare Aliase für die in Seiten verwendeten Entitäten."
+    fields:
+      alias:
+        name: "Alias"
+        description: "Kurzer eindeutiger Name, zum Beispiel living_temperature."
+      entity_id:
+        name: "Entitäts-ID"
+        description: "Vollständige Home-Assistant-ID, zum Beispiel sensor.living_room_temperature."
+  formats:
+    name: "Formatvorlagen"
+    description: "Benannte Jinja-Vorlagen für die Werteausgabe."
+    fields:
+      name:
+        name: "Name"
+      template:
+        name: "Jinja-Vorlage"
+        description: "Zum Beispiel {{ value | float(0) | round(1) }} °C."
+  devices:
+    name: "KAC-Geräte"
+    description: "Verbindung, Geräteeinstellungen, Seiten und Bilder."
+    fields:
+      name:
+        name: "Gerätename"
+      host:
+        name: "Host oder IP-Adresse"
+        description: "Ohne http://, Port oder Pfad."
+      key:
+        name: "KAC-Geräteschlüssel"
+      timeout_seconds:
+        name: "KAC-Zeitlimit"
+      rotation_seconds:
+        name: "Sekunden pro Seite"
+      brightness_enabled:
+        name: "Helligkeit überschreiben"
+      brightness:
+        name: "Helligkeit"
+      timezone:
+        name: "POSIX-Zeitzone"
+        description: "Leer lassen, um die Geräteeinstellung beizubehalten."
+      brightness_schedule_enabled:
+        name: "Helligkeitsplan senden"
+      brightness_day:
+        name: "Helligkeit tagsüber"
+      brightness_night:
+        name: "Helligkeit nachts"
+      night_from:
+        name: "Nacht beginnt (Stunde)"
+      night_until:
+        name: "Nacht endet (Stunde)"
+      pages:
+        name: "Textseiten"
+        fields:
+          title:
+            name: "Seitentitel"
+          rows:
+            name: "Zeilen"
+            fields:
+              type:
+                name: "Zeilentyp"
+              label:
+                name: "Beschriftung"
+              entity:
+                name: "Entitätsalias"
+              format:
+                name: "Formatvorlage"
+              value:
+                name: "Wert oder Wertvorlage"
+              percent:
+                name: "Prozent oder Prozentvorlage"
+              alert:
+                name: "Alarm oder Alarmvorlage"
+              history_points:
+                name: "Verlaufspunkte"
+              scale_min:
+                name: "Skalenminimum"
+              scale_max:
+                name: "Skalenmaximum"
+              values_csv:
+                name: "Feste Verlaufspunkte"
+                description: "Kommagetrennte Zahlen; alternativ eine Entität auswählen."
+      images:
+        name: "Bildseiten"
+        fields:
+          slot:
+            name: "Bild-Slot"
+          source:
+            name: "Lokaler Bildpfad"
+            description: "Relativ zu /config oder absolut; beim Löschen leer lassen."
+          fit:
+            name: "Einpassung"
+          upload:
+            name: "Upload-Verhalten"
+          delete:
+            name: "Slot löschen"
+          quality:
+            name: "JPG-Qualität"
+          gif_colors:
+            name: "GIF-Farben"
+          gif_min_delay_ms:
+            name: "Minimale GIF-Framezeit (ms)"

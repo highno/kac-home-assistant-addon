@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from app.config import kac_settings, load_config
+from app.config import config_from_options, kac_settings, load_config
 from app.errors import ConfigurationError
 
 
@@ -49,6 +49,49 @@ class ConfigTests(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
             with self.assertRaises(ConfigurationError):
                 load_config(path)
+
+    def test_graphical_options_are_converted(self):
+        options = {
+            "update_interval_seconds": 15,
+            "text_mode": "transliterate",
+            "home_assistant_timeout_seconds": 9,
+            "entities": [
+                {"alias": "temp", "entity_id": "sensor.temperature"}
+            ],
+            "formats": [
+                {"name": "temp", "template": "{{ value }} °C"}
+            ],
+            "devices": [
+                {
+                    "name": "living",
+                    "host": "192.168.1.50",
+                    "key": "abc123",
+                    "timeout_seconds": 10,
+                    "rotation_seconds": 20,
+                    "brightness_enabled": True,
+                    "brightness": 75,
+                    "brightness_schedule_enabled": False,
+                    "pages": [
+                        {
+                            "title": "Home",
+                            "rows": [
+                                {
+                                    "type": "big",
+                                    "label": "Temp",
+                                    "entity": "temp",
+                                    "format": "temp",
+                                }
+                            ],
+                        }
+                    ],
+                    "images": [],
+                }
+            ],
+        }
+        config = config_from_options(options)
+        self.assertEqual(config["update_interval_seconds"], 15)
+        self.assertEqual(config["devices"][0]["pages"][0]["rows"][0]["type"], "g")
+        self.assertEqual(config["devices"][0]["settings"]["brightness"], 75)
 
 
 if __name__ == "__main__":

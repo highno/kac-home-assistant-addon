@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Configure entities, format templates, devices, pages, rows, and images through Home Assistant's graphical add-on options.
+- Existing `kac.yaml` installations remain active until at least one device is saved in the UI.
+- Removed first-start example-file creation and its confusing error-level log entry.
+- Added German and English labels for nested configuration fields.
+
 ## 0.1.0
 
 - Initial Home Assistant add-on.
