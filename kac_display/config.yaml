@@ -1,5 +1,5 @@
 name: "KAC Display Bridge"
-version: "0.3.0"
+version: "0.3.1"
 slug: "kac_display"
 description: "Show Home Assistant entities and images on KAC firmware displays"
 url: "https://github.com/highno/kac-home-assistant-addon/tree/main/kac_display"

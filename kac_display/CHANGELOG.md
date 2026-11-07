@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- Fetch `image.*` entities through Home Assistant's documented image proxy.
+- Rasterize SVG image entities such as Ecovacs floor maps before KAC JPEG conversion.
+- Reject external references inside SVG input and report useful byte signatures for unsupported image responses.
+
 ## 0.3.0
 
 - Added a Home Assistant ingress Web UI with searchable entity and alias fields.

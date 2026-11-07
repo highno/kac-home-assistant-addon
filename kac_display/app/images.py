@@ -6,10 +6,16 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
 import time
 from typing import Any
 
 from PIL import Image, ImageSequence
+
+try:
+    from cairosvg import svg2png
+except ImportError:  # Covered by the container dependency; keeps errors actionable.
+    svg2png = None
 
 from .errors import ImageError
 from .ha import HomeAssistantClient
@@ -18,6 +24,37 @@ from .kac import KACClient
 
 SIZE = 240
 MAX_IMAGE_BYTES = 1024 * 1024
+_SVG_ATTRIBUTE_REFERENCE = re.compile(
+    rb"(?:href|src)\s*=\s*['\"]([^'\"]+)['\"]", re.IGNORECASE
+)
+_SVG_CSS_REFERENCE = re.compile(rb"url\(\s*['\"]?([^)'\"]+)", re.IGNORECASE)
+
+
+def _is_svg(raw: bytes) -> bool:
+    prefix = raw[:4096].lstrip(b"\xef\xbb\xbf\x00\t\r\n ").lower()
+    return b"<svg" in prefix
+
+
+def _rasterize_svg(raw: bytes, source_name: str) -> bytes:
+    if svg2png is None:
+        raise ImageError(
+            f"cannot rasterize SVG image {source_name}: CairoSVG is not installed"
+        )
+    if re.search(rb"@import\b", raw, re.IGNORECASE):
+        raise ImageError(
+            f"SVG image {source_name} contains an unsupported external reference"
+        )
+    for pattern in (_SVG_ATTRIBUTE_REFERENCE, _SVG_CSS_REFERENCE):
+        for match in pattern.finditer(raw):
+            target = match.group(1).strip().lower()
+            if not (target.startswith(b"#") or target.startswith(b"data:")):
+                raise ImageError(
+                    f"SVG image {source_name} contains an unsupported external reference"
+                )
+    try:
+        return svg2png(bytestring=raw, output_width=720, unsafe=False)
+    except Exception as exc:
+        raise ImageError(f"cannot rasterize SVG image {source_name}: {exc}") from exc
 
 
 def _fit(frame: Image.Image, mode: str) -> Image.Image:
@@ -76,10 +113,15 @@ def _jpeg(frame: Image.Image, options: dict[str, Any]) -> bytes:
 def prepare_image_bytes(
     raw: bytes, source_name: str, options: dict[str, Any]
 ) -> tuple[bytes, str]:
+    if _is_svg(raw):
+        raw = _rasterize_svg(raw, source_name)
     try:
         image = Image.open(io.BytesIO(raw))
     except (OSError, Image.UnidentifiedImageError) as exc:
-        raise ImageError(f"cannot open image {source_name}: {exc}") from exc
+        signature = raw[:12].hex() or "empty"
+        raise ImageError(
+            f"cannot open image {source_name} ({len(raw)} bytes, signature {signature}): {exc}"
+        ) from exc
     frames = (
         [frame.copy() for frame in ImageSequence.Iterator(image)]
         if getattr(image, "is_animated", False)

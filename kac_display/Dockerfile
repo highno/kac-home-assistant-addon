@@ -3,6 +3,7 @@ FROM ${BUILD_FROM}
 
 RUN apk add --no-cache \
       python3 \
+      py3-cairosvg \
       py3-jinja2 \
       py3-pillow \
       py3-requests \

@@ -2,10 +2,12 @@ import io
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from PIL import Image
 
-from app.images import ImageSynchronizer, prepare_image
+from app.errors import ImageError
+from app.images import ImageSynchronizer, prepare_image, prepare_image_bytes
 
 
 class ImageTests(unittest.TestCase):
@@ -45,6 +47,21 @@ class ImageTests(unittest.TestCase):
         with Image.open(io.BytesIO(data)) as result:
             self.assertEqual(result.size, (240, 240))
 
+    def test_svg_external_references_are_rejected(self):
+        svg = b'<svg xmlns="http://www.w3.org/2000/svg"><image href="http://device/private.png"/></svg>'
+        with self.assertRaises(ImageError):
+            prepare_image_bytes(
+                svg,
+                "unsafe.svg",
+                {
+                    "fit": "contain",
+                    "quality": 70,
+                    "max_jpeg_kb": 30,
+                    "gif_colors": 64,
+                    "gif_min_delay_ms": 100,
+                },
+            )
+
     def test_quality_below_twenty_is_supported(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.png"
@@ -61,6 +78,30 @@ class ImageTests(unittest.TestCase):
             )
         self.assertEqual(extension, "jpg")
         self.assertTrue(data.startswith(b"\xff\xd8"))
+
+    def test_svg_map_is_rasterized_to_jpeg(self):
+        svg = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">
+        <rect width="400" height="200" fill="#202020"/>
+        <path d="M20 20h360v160H20z" fill="#40a0ff"/>
+        </svg>"""
+        raster = io.BytesIO()
+        Image.new("RGB", (400, 200), "blue").save(raster, "PNG")
+        with patch("app.images.svg2png", return_value=raster.getvalue()) as renderer:
+            data, extension = prepare_image_bytes(
+                svg,
+                "image.saugi_karte",
+                {
+                    "fit": "contain",
+                    "quality": 70,
+                    "max_jpeg_kb": 30,
+                    "gif_colors": 64,
+                    "gif_min_delay_ms": 100,
+                },
+            )
+        renderer.assert_called_once()
+        self.assertEqual(extension, "jpg")
+        with Image.open(io.BytesIO(data)) as result:
+            self.assertEqual(result.size, (240, 240))
 
     def test_entity_image_is_fetched_once_per_refresh_interval(self):
         raw = io.BytesIO()

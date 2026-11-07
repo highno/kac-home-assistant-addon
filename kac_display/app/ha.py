@@ -101,7 +101,7 @@ class HomeAssistantClient:
                     "domain": domain,
                     "state": str(item.get("state", "unavailable")),
                     "has_image": bool(
-                        domain in {"camera", "media_player"}
+                        domain in {"camera", "image", "media_player"}
                         or attributes.get("entity_picture")
                     ),
                 }
@@ -115,6 +115,9 @@ class HomeAssistantClient:
         if domain == "camera":
             url = f"{self.base_url}/camera_proxy/{encoded_id}"
             params: dict[str, Any] | None = {"width": 240, "height": 240}
+        elif domain == "image":
+            url = f"{self.base_url}/image_proxy/{encoded_id}"
+            params = None
         elif domain == "media_player":
             url = f"{self.base_url}/media_player_proxy/{encoded_id}"
             params = None

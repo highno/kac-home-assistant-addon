@@ -63,6 +63,15 @@ class HomeAssistantTests(unittest.TestCase):
             "http://supervisor/core/api/media_player_proxy/media_player.living",
         )
 
+    def test_image_entity_uses_documented_proxy(self):
+        session = Session()
+        client = HomeAssistantClient("token", session=session)
+        self.assertEqual(client.entity_image("image.saugi_karte"), b"image")
+        self.assertEqual(
+            session.urls[-1][0],
+            "http://supervisor/core/api/image_proxy/image.saugi_karte",
+        )
+
     def test_other_entity_uses_relative_entity_picture(self):
         class PictureSession(Session):
             def get(self, url, **kwargs):
@@ -70,7 +79,7 @@ class HomeAssistantTests(unittest.TestCase):
                 if "/states/" in url:
                     return Response(
                         {
-                            "entity_id": "image.weather",
+                            "entity_id": "sensor.weather_map",
                             "state": "2026-11-07T18:00:00Z",
                             "attributes": {
                                 "entity_picture": "/api/image/serve/weather/original"
@@ -81,7 +90,7 @@ class HomeAssistantTests(unittest.TestCase):
 
         session = PictureSession()
         client = HomeAssistantClient("token", session=session)
-        self.assertEqual(client.entity_image("image.weather"), b"weather")
+        self.assertEqual(client.entity_image("sensor.weather_map"), b"weather")
         self.assertEqual(
             session.urls[-1][0],
             "http://supervisor/core/api/image/serve/weather/original",

@@ -158,12 +158,12 @@ KAC-Bilder sind eigenständige Vollbildseiten. Sie können nicht mit Textzeilen 
 
 - `slot`: 1–5.
 - `source_type: file`: hochgeladene oder bereits unter `/config` vorhandene Datei.
-- `source_type: entity`: Kamera, Medienplayer oder eine andere Entität mit einem von Home Assistant bereitgestellten `entity_picture`.
+- `source_type: entity`: Kamera, `image`-Entität, Medienplayer oder eine andere Entität mit einem von Home Assistant bereitgestellten `entity_picture`.
 - `fit: cover`: mittiger quadratischer Ausschnitt; `contain`: ganzes Bild mit schwarzen Rändern.
 - `upload: on_change`: nur nach Datei-/Optionsänderung; `startup`: bei jedem Add-on-Start.
 - `refresh_seconds`: frühester erneuter Abruf einer Bild-Entität, standardmäßig 3600 Sekunden und mindestens 60 Sekunden.
 - **Statische Grafik hochladen** akzeptiert JPEG, PNG, WebP und BMP bis 10 MB. Die Originaldatei wird unter `/config/uploads` abgelegt.
-- Statische Eingaben werden immer neu auf 240×240 Pixel skaliert, Metadaten werden entfernt und ein nicht-progressives JPEG mit 4:2:0-Unterabtastung wird erzeugt.
+- Statische Rasterbilder und SVG-Ausgaben werden immer neu auf 240×240 Pixel skaliert, Metadaten werden entfernt und ein nicht-progressives JPEG mit 4:2:0-Unterabtastung wird erzeugt.
 - Die maximale JPEG-Qualität ist standardmäßig 70. Das Add-on senkt sie bei Bedarf schrittweise bis zur konfigurierten Zielgröße von standardmäßig 30 KB (Untergrenze Qualität 20).
 - Animierte Eingaben werden als 240×240 GIF mit gemeinsamer Palette erzeugt.
 - Das vorbereitete Ergebnis darf höchstens 1 MB groß sein.
@@ -171,7 +171,7 @@ KAC-Bilder sind eigenständige Vollbildseiten. Sie können nicht mit Textzeilen 
 
 KAC speichert Bildseiten dauerhaft, sodass sie auch nach einem Neustart vorhanden sind. Eine Kamera ist deshalb als regelmäßig erneuertes Standbild gedacht, nicht als Livebild. Sehr häufige Uploads würden den Flash-Speicher unnötig belasten; der Webeditor warnt davor und verwendet standardmäßig eine Stunde.
 
-Kamera-Entitäten werden über `/api/camera_proxy/{entity_id}` abgerufen, Medienplayer über `/api/media_player_proxy/{entity_id}`. Bei anderen Entitäten wird nur ein relatives, von Home Assistant bereitgestelltes `/api/...`-`entity_picture` akzeptiert. Beliebige externe Bild-URLs werden aus Sicherheitsgründen nicht direkt vom Add-on abgerufen.
+Kamera-Entitäten werden über `/api/camera_proxy/{entity_id}`, `image.*`-Entitäten über `/api/image_proxy/{entity_id}` und Medienplayer über `/api/media_player_proxy/{entity_id}` abgerufen. SVG-Inhalte – darunter Ecovacs-Grundrisse – werden lokal gerastert; externe Verweise innerhalb eines SVG werden nicht geladen. Bei anderen Entitäten wird nur ein relatives, von Home Assistant bereitgestelltes `/api/...`-`entity_picture` akzeptiert. Beliebige externe Bild-URLs werden aus Sicherheitsgründen nicht direkt vom Add-on abgerufen.
 
 ## Text- und Firmwaregrenzen
 
@@ -205,6 +205,7 @@ Kamera-Entitäten werden über `/api/camera_proxy/{entity_id}` abgerufen, Medien
 - **`voll: true`:** weniger Textseiten konfigurieren; insbesondere GIF entfernen/ersetzen.
 - **Bild HTTP 422:** meist zweites GIF, progressives/ungeeignetes Bild oder Firmwarelimit. Das Add-on konvertiert Eingaben, meldet aber die konkrete Geräteantwort.
 - **Bild-Entität nicht verfügbar:** Entität in der Weboberfläche erneut suchen; bei anderen Domänen als Kamera/Medienplayer prüfen, ob `entity_picture` vorhanden und ein relativer `/api/...`-Pfad ist.
+- **Ecovacs-Karte:** Wenn die Karte im Home-Assistant-Dialog sichtbar ist, verarbeitet das Add-on ihr SVG ab Version 0.3.1. Liefert bereits Home Assistants `/api/image_proxy/<entity_id>` einen HTTP-500-Fehler oder kein SVG, liegt der Fehler in der Ecovacs-Integration beziehungsweise deren Geräteunterstützung und kann vom Add-on nicht rekonstruiert werden.
 - **Vorlagenfehler:** `dry_run: true` aktivieren und Add-on-Log lesen.
 
 ## Verifizierte Quellen
@@ -214,5 +215,6 @@ Kamera-Entitäten werden über `/api/camera_proxy/{entity_id}` abgerufen, Medien
 - [Offizielles KAC-Python-Hilfsmodul](https://github.com/GiT-BeDa/KleinerAnzeigeComputer/blob/main/tools/kac.py)
 - [Home Assistant: App-Konfiguration](https://contributors.home-assistant.io/apps/reference/configuration/)
 - [Home Assistant: REST-API einschließlich Kamera-Proxy](https://developers.home-assistant.io/docs/api/rest/)
+- [Home Assistant: Image-Entitäten](https://developers.home-assistant.io/docs/core/entity/image/)
 - [Home Assistant: Kommunikation mit Core/Supervisor](https://contributors.home-assistant.io/apps/guides/communication/)
 - [Home Assistant: Repository erstellen und hinzufügen](https://contributors.home-assistant.io/apps/guides/repository/)
