@@ -12,16 +12,18 @@ import sys
 import threading
 from typing import Any
 
-from .config import config_from_options, kac_settings, load_config
+from .config import config_from_options, kac_settings, load_config, options_from_config
 from .errors import BridgeError, ConfigurationError
 from .ha import HomeAssistantClient
 from .images import ImageSynchronizer
 from .kac import KACClient
 from .render import HistoryStore, PageRenderer
+from .ui import ConfigurationServer, UIConfigurationStore
 
 
 LOGGER = logging.getLogger("kac_bridge")
 OPTIONS_PATH = Path("/data/options.json")
+UI_CONFIG_PATH = Path("/data/kac-ui-config.json")
 
 
 def _load_options() -> dict[str, Any]:
@@ -109,7 +111,11 @@ class Bridge:
                         firmware,
                     )
                 for message in self.image_sync.sync_device(
-                    device, client, self.config["config_dir"], status
+                    device,
+                    client,
+                    self.config["config_dir"],
+                    status,
+                    self.ha,
                 ):
                     LOGGER.info("%s: %s", name, message)
             except BridgeError as exc:
@@ -122,6 +128,17 @@ class Bridge:
                 LOGGER.warning("%s (%s) is %s", alias, state.entity_id, state.state)
         for device in self.config["devices"]:
             name = device["name"]
+            if not self.dry_run:
+                try:
+                    for message in self.image_sync.sync_device(
+                        device,
+                        self.clients[name],
+                        self.config["config_dir"],
+                        ha=self.ha,
+                    ):
+                        LOGGER.info("%s: %s", name, message)
+                except BridgeError as exc:
+                    LOGGER.error("%s: image update failed: %s", name, exc)
             try:
                 pages = self.renderer.render_device(device, states)
                 if self.dry_run:
@@ -164,37 +181,98 @@ class Bridge:
             self.stop_event.wait(interval)
 
 
+def _runtime_config(
+    options: dict[str, Any], store: UIConfigurationStore
+) -> tuple[dict[str, Any], bool]:
+    if store.exists:
+        ui_options = store.read()
+        config = config_from_options(ui_options)
+        LOGGER.info(
+            "using ingress configuration with %d device(s)", len(config["devices"])
+        )
+        return config, bool(ui_options.get("dry_run", options["dry_run"]))
+    if options.get("devices"):
+        config = config_from_options(options)
+        LOGGER.warning(
+            "using Configuration-tab settings; open the add-on Web UI and save to migrate"
+        )
+        return config, bool(options["dry_run"])
+    config_path = Path(str(options["config_file"]))
+    if config_path.is_file():
+        config = load_config(config_path)
+        LOGGER.warning(
+            "using legacy configuration file %s; open the add-on Web UI to migrate",
+            config_path,
+        )
+        return config, bool(options["dry_run"])
+    raise ConfigurationError(
+        "no device is configured yet; open the add-on Web UI, add a KAC device, "
+        "and save the configuration"
+    )
+
+
 def main() -> int:
+    server: ConfigurationServer | None = None
     try:
         options = _load_options()
         logging.basicConfig(
             level=getattr(logging, str(options["log_level"]).upper(), logging.INFO),
             format="%(asctime)s %(levelname)s %(message)s",
         )
-        if options.get("devices"):
-            config = config_from_options(options)
-            LOGGER.info(
-                "using Home Assistant graphical configuration with %d device(s)",
-                len(config["devices"]),
-            )
-        else:
-            config_path = Path(str(options["config_file"]))
-            if not config_path.is_file():
-                raise ConfigurationError(
-                    "no devices are configured in the Home Assistant UI and no legacy "
-                    f"configuration exists at {config_path}; add a device on the add-on "
-                    "Configuration tab"
-                )
-            config = load_config(config_path)
-            LOGGER.warning(
-                "using legacy configuration file %s; add devices on the add-on Configuration tab to switch to graphical configuration",
-                config_path,
-            )
-        bridge = Bridge(config, bool(options["dry_run"]))
-        signal.signal(signal.SIGTERM, bridge.stop)
-        signal.signal(signal.SIGINT, bridge.stop)
-        bridge.run()
+        shutdown_event = threading.Event()
+        reload_event = threading.Event()
+
+        def stop(*_: Any) -> None:
+            shutdown_event.set()
+            reload_event.set()
+
+        signal.signal(signal.SIGTERM, stop)
+        signal.signal(signal.SIGINT, stop)
+
+        editor_options = options
+        legacy_path = Path(str(options["config_file"]))
+        if not options.get("devices") and legacy_path.is_file():
+            try:
+                editor_options = options_from_config(load_config(legacy_path), options)
+                LOGGER.info("prepared legacy configuration for migration in the Web UI")
+            except ConfigurationError as exc:
+                LOGGER.warning("cannot prepare legacy configuration for Web UI: %s", exc)
+        store = UIConfigurationStore(UI_CONFIG_PATH, editor_options)
+        editor_ha = HomeAssistantClient(
+            os.environ.get("SUPERVISOR_TOKEN", ""),
+            float(options["home_assistant_timeout_seconds"]),
+        )
+        server = ConfigurationServer(store, editor_ha, reload_event)
+        server.start()
+        LOGGER.info("graphical editor is available through the add-on Web UI")
+
+        while not shutdown_event.is_set():
+            reload_event.clear()
+            try:
+                config, dry_run = _runtime_config(options, store)
+            except ConfigurationError as exc:
+                LOGGER.error("configuration error: %s", exc)
+                reload_event.wait()
+                continue
+
+            bridge = Bridge(config, dry_run)
+            bridge.initialize_devices()
+            interval = config["update_interval_seconds"]
+            while not shutdown_event.is_set() and not reload_event.is_set():
+                try:
+                    bridge.run_once()
+                except BridgeError as exc:
+                    LOGGER.error("update cycle failed: %s", exc)
+                except Exception:
+                    LOGGER.exception("unexpected update-cycle failure")
+                reload_event.wait(interval)
+            if reload_event.is_set() and not shutdown_event.is_set():
+                LOGGER.info("configuration changed; reloading bridge")
         return 0
+    except OSError as exc:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+        LOGGER.error("cannot start graphical editor: %s", exc)
+        return 1
     except ConfigurationError as exc:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
         LOGGER.error("configuration error: %s", exc)
@@ -203,6 +281,9 @@ def main() -> int:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
         LOGGER.error("startup failed: %s", exc)
         return 1
+    finally:
+        if server is not None:
+            server.stop()
 
 
 if __name__ == "__main__":

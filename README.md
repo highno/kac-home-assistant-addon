@@ -1,6 +1,6 @@
 # KAC Home Assistant Add-on
 
-This repository contains an installable Home Assistant add-on that reads arbitrary Home Assistant entities and sends documented page/row data to devices running the **KleinerAnzeigeComputer (KAC)** firmware. Its complete configuration is available as nested forms on Home Assistant's add-on Configuration tab; no hand-edited YAML file is required.
+This repository contains an installable Home Assistant add-on that reads arbitrary Home Assistant entities and sends documented page/row data to devices running the **KleinerAnzeigeComputer (KAC)** firmware. Its Home Assistant ingress editor provides searchable entities and aliases, camera/media image sources, and static image uploads; no hand-edited YAML file is required.
 
 [![Open your Home Assistant instance and add this repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhighno%2Fkac-home-assistant-addon)
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Added a Home Assistant ingress Web UI with searchable entity and alias fields.
+- Added camera snapshots, media-player artwork, and generic proxied `entity_picture` sources.
+- Added direct static-image uploads to the add-on configuration folder.
+- Added automatic 240×240 fitting and adaptive baseline-JPEG compression with a configurable target size.
+- Image entities refresh at a configurable interval and upload only when their content changes.
+- Existing 0.2 graphical options and legacy `kac.yaml` configurations remain valid migration sources.
+
 ## 0.2.0
 
 - Configure entities, format templates, devices, pages, rows, and images through Home Assistant's graphical add-on options.

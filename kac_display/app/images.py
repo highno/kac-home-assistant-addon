@@ -6,11 +6,13 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 from PIL import Image, ImageSequence
 
 from .errors import ImageError
+from .ha import HomeAssistantClient
 from .kac import KACClient
 
 
@@ -43,27 +45,48 @@ def _fit(frame: Image.Image, mode: str) -> Image.Image:
     )
 
 
-def prepare_image(source: Path, options: dict[str, Any]) -> tuple[bytes, str]:
+def _jpeg(frame: Image.Image, options: dict[str, Any]) -> bytes:
+    """Encode at the highest useful quality that stays below the target size."""
+    maximum_quality = int(options.get("quality", 70))
+    target_bytes = int(options.get("max_jpeg_kb", 30)) * 1024
+    smallest: bytes | None = None
+    qualities = list(range(maximum_quality, 19, -5))
+    if maximum_quality < 20:
+        qualities = [maximum_quality]
+    elif qualities[-1] != 20:
+        qualities.append(20)
+    for quality in qualities:
+        output = io.BytesIO()
+        frame.save(
+            output,
+            "JPEG",
+            quality=quality,
+            progressive=False,
+            optimize=True,
+            subsampling=2,
+        )
+        candidate = output.getvalue()
+        smallest = candidate
+        if len(candidate) <= target_bytes:
+            return candidate
+    assert smallest is not None
+    return smallest
+
+
+def prepare_image_bytes(
+    raw: bytes, source_name: str, options: dict[str, Any]
+) -> tuple[bytes, str]:
     try:
-        raw = source.read_bytes()
         image = Image.open(io.BytesIO(raw))
     except (OSError, Image.UnidentifiedImageError) as exc:
-        raise ImageError(f"cannot open image {source}: {exc}") from exc
+        raise ImageError(f"cannot open image {source_name}: {exc}") from exc
     frames = (
         [frame.copy() for frame in ImageSequence.Iterator(image)]
         if getattr(image, "is_animated", False)
         else [image.copy()]
     )
     if len(frames) == 1:
-        output = io.BytesIO()
-        _fit(frames[0], options["fit"]).save(
-            output,
-            "JPEG",
-            quality=options["quality"],
-            progressive=False,
-            optimize=True,
-        )
-        data, extension = output.getvalue(), "jpg"
+        data, extension = _jpeg(_fit(frames[0], options["fit"]), options), "jpg"
     else:
         delays = [
             max(options["gif_min_delay_ms"], int(frame.info.get("duration") or 0))
@@ -94,9 +117,17 @@ def prepare_image(source: Path, options: dict[str, Any]) -> tuple[bytes, str]:
         data, extension = output.getvalue(), "gif"
     if len(data) > MAX_IMAGE_BYTES:
         raise ImageError(
-            f"prepared image {source} is {len(data)} bytes; KAC accepts at most 1 MB"
+            f"prepared image {source_name} is {len(data)} bytes; KAC accepts at most 1 MB"
         )
     return data, extension
+
+
+def prepare_image(source: Path, options: dict[str, Any]) -> tuple[bytes, str]:
+    try:
+        raw = source.read_bytes()
+    except OSError as exc:
+        raise ImageError(f"cannot read image {source}: {exc}") from exc
+    return prepare_image_bytes(raw, str(source), options)
 
 
 class ImageSynchronizer:
@@ -107,19 +138,18 @@ class ImageSynchronizer:
             self.cache = raw if isinstance(raw, dict) else {}
         except (OSError, ValueError):
             self.cache: dict[str, str] = {}
+        self.last_entity_fetch: dict[str, float] = {}
 
     @staticmethod
-    def _fingerprint(source: Path, image: dict[str, Any]) -> str:
+    def _fingerprint(raw: bytes, image: dict[str, Any]) -> str:
         digest = hashlib.sha256()
-        try:
-            digest.update(source.read_bytes())
-        except OSError as exc:
-            raise ImageError(f"cannot read image {source}: {exc}") from exc
+        digest.update(raw)
         relevant = {
             key: image[key]
             for key in (
                 "fit",
                 "quality",
+                "max_jpeg_kb",
                 "gif_colors",
                 "gif_min_delay_ms",
             )
@@ -133,6 +163,7 @@ class ImageSynchronizer:
         client: KACClient,
         config_dir: str | Path,
         status: dict[str, Any] | None = None,
+        ha: HomeAssistantClient | None = None,
     ) -> list[str]:
         messages: list[str] = []
         media_status = (
@@ -140,18 +171,41 @@ class ImageSynchronizer:
             if (status or {}).get("medien") is not None
             else []
         )
-        prepared: list[tuple[dict[str, Any], Path | None, str, bytes | None, str | None]] = []
+        prepared: list[
+            tuple[dict[str, Any], str | None, str, bytes | None, str | None]
+        ] = []
         for image in device["images"]:
             slot = image["slot"]
             if image.get("delete"):
                 prepared.append((image, None, "deleted", None, None))
                 continue
-            source = Path(image["source"])
-            if not source.is_absolute():
-                source = Path(config_dir) / source
-            fingerprint = self._fingerprint(source, image)
-            data, extension = prepare_image(source, image)
-            prepared.append((image, source, fingerprint, data, extension))
+            cache_key = f"{device['name']}:{slot}"
+            if image.get("source_type", "file") == "entity":
+                now = time.monotonic()
+                if (
+                    cache_key in self.last_entity_fetch
+                    and now - self.last_entity_fetch[cache_key]
+                    < image["refresh_seconds"]
+                ):
+                    continue
+                if ha is None:
+                    raise ImageError(
+                        f"{device['name']}: Home Assistant image source requires an API client"
+                    )
+                source_name = image["entity_id"]
+                raw = ha.entity_image(source_name)
+            else:
+                source_path = Path(image["source"])
+                if not source_path.is_absolute():
+                    source_path = Path(config_dir) / source_path
+                try:
+                    raw = source_path.read_bytes()
+                except OSError as exc:
+                    raise ImageError(f"cannot read image {source_path}: {exc}") from exc
+                source_name = str(source_path)
+            fingerprint = self._fingerprint(raw, image)
+            data, extension = prepare_image_bytes(raw, source_name, image)
+            prepared.append((image, source_name, fingerprint, data, extension))
 
         if sum(extension == "gif" for _, _, _, _, extension in prepared) > 1:
             raise ImageError(
@@ -160,7 +214,7 @@ class ImageSynchronizer:
 
         # Upload a GIF last because KAC restarts once after receiving its first GIF.
         prepared.sort(key=lambda item: item[4] == "gif")
-        for image, source, fingerprint, data, extension in prepared:
+        for image, source_name, fingerprint, data, extension in prepared:
             slot = image["slot"]
             cache_key = f"{device['name']}:{slot}"
             remote_raw = media_status[slot - 1] if len(media_status) >= slot else None
@@ -183,13 +237,16 @@ class ImageSynchronizer:
                 and self.cache.get(cache_key) == fingerprint
                 and remote_type in {None, extension}
             ):
-                messages.append(f"image slot {slot} unchanged")
+                if image.get("source_type") == "entity":
+                    self.last_entity_fetch[cache_key] = time.monotonic()
                 continue
-            assert data is not None and extension is not None and source is not None
+            assert data is not None and extension is not None and source_name is not None
             client.upload_image(data, extension, slot)
             self.cache[cache_key] = fingerprint
+            if image.get("source_type") == "entity":
+                self.last_entity_fetch[cache_key] = time.monotonic()
             messages.append(
-                f"uploaded {extension.upper()} to image slot {slot} ({len(data)} bytes)"
+                f"uploaded {extension.upper()} from {source_name} to image slot {slot} ({len(data)} bytes)"
             )
         self.save()
         return messages

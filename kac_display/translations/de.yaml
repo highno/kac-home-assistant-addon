@@ -104,9 +104,14 @@ configuration:
         fields:
           slot:
             name: "Bild-Slot"
+          source_type:
+            name: "Bildquelle"
           source:
             name: "Lokaler Bildpfad"
             description: "Relativ zu /config oder absolut; beim Löschen leer lassen."
+          entity_id:
+            name: "Kamera-/Medien-Entität"
+            description: "In der Weboberfläche durchsuchbar; hier als vollständige Entitäts-ID."
           fit:
             name: "Einpassung"
           upload:
@@ -114,7 +119,12 @@ configuration:
           delete:
             name: "Slot löschen"
           quality:
-            name: "JPG-Qualität"
+            name: "Maximale JPG-Qualität"
+          max_jpeg_kb:
+            name: "JPEG-Zielgröße (KB)"
+          refresh_seconds:
+            name: "Bild-Aktualisierung (Sekunden)"
+            description: "KAC speichert Bilder dauerhaft; mindestens 3600 Sekunden werden empfohlen."
           gif_colors:
             name: "GIF-Farben"
           gif_min_delay_ms:

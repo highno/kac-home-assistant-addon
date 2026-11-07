@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>KAC Display Bridge</title>
+  <style>
+    :root { color-scheme: light dark; --accent:#03a9f4; --panel:color-mix(in srgb, Canvas 94%, CanvasText 6%); --line:color-mix(in srgb, CanvasText 20%, transparent); }
+    * { box-sizing:border-box } body { margin:0; font:14px/1.45 system-ui,sans-serif; background:Canvas; color:CanvasText }
+    header { position:sticky; top:0; z-index:3; display:flex; gap:16px; align-items:center; padding:14px max(18px,calc((100vw - 1200px)/2)); background:Canvas; border-bottom:1px solid var(--line) }
+    header h1 { font-size:20px; margin:0; flex:1 } main { max-width:1200px; margin:auto; padding:20px }
+    section,.card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin:14px 0 }
+    h2,h3,h4 { margin:0 0 12px } h2 { font-size:18px } h3 { font-size:16px } h4 { font-size:14px }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px }
+    label { display:grid; gap:5px; min-width:0 } label span { font-size:12px; opacity:.8 }
+    input,select,textarea,button { font:inherit } input,select,textarea { width:100%; padding:9px; border:1px solid var(--line); border-radius:7px; background:Canvas; color:CanvasText }
+    textarea { min-height:70px; resize:vertical } input[type=checkbox] { width:auto; align-self:center }
+    .check { display:flex; align-items:center; gap:8px; padding-top:24px } .check span { font-size:14px }
+    button { border:0; border-radius:8px; padding:9px 13px; cursor:pointer; background:color-mix(in srgb, CanvasText 10%, Canvas); color:CanvasText }
+    button.primary { background:var(--accent); color:#fff } button.danger { color:#d32f2f } button.small { padding:6px 9px }
+    .head { display:flex; gap:10px; align-items:center; margin-bottom:10px }.head :first-child { flex:1 }.actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px }
+    .nested { border-left:3px solid var(--accent); padding-left:12px; margin:14px 0 }.muted { opacity:.7 }.status { min-height:22px }.error { color:#d32f2f }.ok { color:#2e7d32 }
+    .entity-row { display:grid; grid-template-columns:minmax(150px,.7fr) minmax(260px,2fr) auto; gap:10px; align-items:end; margin:8px 0 }
+    details { margin-top:12px } summary { cursor:pointer; font-weight:600 }.upload-note { font-size:12px; opacity:.75 }
+    @media(max-width:650px){ .entity-row{grid-template-columns:1fr}.entity-row button{justify-self:start} header{padding:12px} main{padding:12px} }
+  </style>
+</head>
+<body>
+<header><h1>KAC Display Bridge</h1><div id="status" class="status muted">Lade Konfiguration …</div><button id="save" class="primary">Speichern</button></header>
+<main id="app"></main>
+<datalist id="ha-entities"></datalist><datalist id="image-entities"></datalist><datalist id="aliases"></datalist><datalist id="formats"></datalist>
+<script>
+let model={entities:[],formats:[],devices:[]}, catalog=[];
+const app=document.querySelector('#app'), statusEl=document.querySelector('#status');
+const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const path=(...x)=>x.join('.');
+function setAt(root,p,value){const keys=p.split('.');let x=root;for(let i=0;i<keys.length-1;i++)x=x[keys[i]];x[keys.at(-1)]=value}
+function field(label,p,value,type='text',extra=''){return `<label><span>${label}</span><input type="${type}" data-path="${p}" value="${esc(value)}" ${extra}></label>`}
+function select(label,p,value,items){return `<label><span>${label}</span><select data-path="${p}">${items.map(([v,t])=>`<option value="${esc(v)}" ${v===value?'selected':''}>${esc(t)}</option>`).join('')}</select></label>`}
+function check(label,p,value){return `<label class="check"><input type="checkbox" data-path="${p}" ${value?'checked':''}><span>${label}</span></label>`}
+function button(action,label,cls=''){return `<button type="button" data-action="${action}" class="${cls}">${label}</button>`}
+const newDevice=()=>({name:'kac',host:'',key:'',timeout_seconds:10,rotation_seconds:30,brightness_enabled:false,brightness:75,timezone:'',brightness_schedule_enabled:false,brightness_day:90,brightness_night:10,night_from:23,night_until:7,pages:[newPage()],images:[]});
+const newPage=()=>({title:'Home',rows:[newRow()]});
+const newRow=()=>({type:'value',label:'',entity:'',format:'',value:'',percent:'',alert:'',history_points:20,scale_min:0,scale_max:100,values_csv:''});
+const newImage=()=>({slot:1,source_type:'file',source:'',entity_id:'',fit:'cover',upload:'on_change',delete:false,quality:70,max_jpeg_kb:30,refresh_seconds:3600,gif_colors:64,gif_min_delay_ms:100});
+function normalize(){model.entities??=[];model.formats??=[];model.devices??=[];model.update_interval_seconds??=10;model.text_mode??='transliterate';model.home_assistant_timeout_seconds??=10;model.dry_run??=false;model.devices.forEach(d=>{d.timeout_seconds??=10;d.rotation_seconds??=30;d.brightness_enabled??=false;d.brightness??=75;d.timezone??='';d.brightness_schedule_enabled??=false;d.brightness_day??=90;d.brightness_night??=10;d.night_from??=23;d.night_until??=7;d.pages??=[];d.images??=[];d.pages.forEach(p=>{p.rows??=[];p.rows.forEach(r=>{r.label??='';r.entity??='';r.format??='';r.value??='';r.percent??='';r.alert??='';r.history_points??=20;r.scale_min??=0;r.scale_max??=100;r.values_csv??=''})});d.images.forEach(im=>{im.source_type??=im.entity_id?'entity':'file';im.source??='';im.entity_id??='';im.fit??='cover';im.upload??='on_change';im.delete??=false;im.quality??=70;im.max_jpeg_kb??=30;im.refresh_seconds??=3600})})}
+function refreshLists(){
+  document.querySelector('#ha-entities').innerHTML=catalog.map(e=>`<option value="${esc(e.entity_id)}">${esc(e.name)} · ${esc(e.state)}</option>`).join('');
+  document.querySelector('#image-entities').innerHTML=catalog.filter(e=>e.has_image).map(e=>`<option value="${esc(e.entity_id)}">${esc(e.name)} · ${esc(e.domain)}</option>`).join('');
+  document.querySelector('#aliases').innerHTML=model.entities.filter(e=>e.alias).map(e=>`<option value="${esc(e.alias)}">${esc(e.entity_id)}</option>`).join('');
+  document.querySelector('#formats').innerHTML=model.formats.filter(e=>e.name).map(e=>`<option value="${esc(e.name)}"></option>`).join('');
+}
+function renderRows(di,pi,rows){return rows.map((r,ri)=>{const b=path('devices',di,'pages',pi,'rows',ri);return `<div class="card nested"><div class="head"><h4>Zeile ${ri+1}</h4>${button(`row-del:${di}:${pi}:${ri}`,'Entfernen','danger small')}</div><div class="grid">
+${select('Zeilentyp',path(b,'type'),r.type,[['heading','Überschrift'],['value','Wert'],['down','Abwärts'],['up','Aufwärts'],['bar','Balken'],['big','Großwert'],['sparkline','Verlauf'],['empty','Leer']])}
+${field('Beschriftung',path(b,'label'),r.label)}${field('Entitätsalias',path(b,'entity'),r.entity,'text','list="aliases" placeholder="Alias suchen"')}${field('Formatvorlage',path(b,'format'),r.format,'text','list="formats"')}
+${field('Wert / Jinja-Vorlage',path(b,'value'),r.value)}${field('Prozent / Vorlage',path(b,'percent'),r.percent)}${field('Alarm / Vorlage',path(b,'alert'),r.alert)}
+${field('Verlaufspunkte',path(b,'history_points'),r.history_points,'number','min="1" max="20" data-number="int"')}${field('Skalenminimum',path(b,'scale_min'),r.scale_min,'number','step="any" data-number="float"')}${field('Skalenmaximum',path(b,'scale_max'),r.scale_max,'number','step="any" data-number="float"')}${field('Feste Verlaufspunkte (CSV)',path(b,'values_csv'),r.values_csv)}
+</div></div>`}).join('')}
+function renderPages(di,pages){return pages.map((p,pi)=>{const b=path('devices',di,'pages',pi);return `<div class="card nested"><div class="head"><h3>Textseite ${pi+1}</h3>${button(`page-del:${di}:${pi}`,'Seite entfernen','danger small')}</div>${field('Seitentitel',path(b,'title'),p.title)}<div class="actions">${button(`row-add:${di}:${pi}`,'+ Zeile')}</div>${renderRows(di,pi,p.rows??[])}</div>`}).join('')}
+function renderImages(di,images){return images.map((im,ii)=>{const b=path('devices',di,'images',ii), entity=im.source_type==='entity';return `<div class="card nested"><div class="head"><h3>Bild-Slot ${esc(im.slot)}</h3>${button(`image-del:${di}:${ii}`,'Bild entfernen','danger small')}</div><div class="grid">
+${field('Slot',path(b,'slot'),im.slot,'number','min="1" max="5" data-number="int"')}${select('Bildquelle',path(b,'source_type'),im.source_type??'file',[['file','Hochgeladene/lokale Datei'],['entity','Kamera- oder Medien-Entität']])}
+${entity?field('Bild-Entität',path(b,'entity_id'),im.entity_id,'text','list="image-entities" placeholder="Entität suchen"'):field('Lokaler Bildpfad',path(b,'source'),im.source,'text','placeholder="uploads/bild.png"')}
+${select('Einpassung',path(b,'fit'),im.fit,[['cover','Füllen / beschneiden'],['contain','Ganzes Bild / Rand']])}${select('Upload',path(b,'upload'),im.upload,[['on_change','Nur bei Änderung'],['startup','Bei jedem Start/Abruf']])}
+${field('Maximale JPEG-Qualität',path(b,'quality'),im.quality,'number','min="1" max="100" data-number="int"')}${field('JPEG-Zielgröße (KB)',path(b,'max_jpeg_kb'),im.max_jpeg_kb,'number','min="5" max="1024" data-number="int"')}${field('Entität neu laden nach Sekunden',path(b,'refresh_seconds'),im.refresh_seconds,'number','min="60" max="86400" data-number="int"')}${check('Slot löschen',path(b,'delete'),im.delete)}
+</div>${!entity?`<div class="actions">${button(`upload:${di}:${ii}`,'Statische Grafik hochladen')}<input hidden type="file" accept="image/jpeg,image/png,image/webp,image/bmp" data-upload="${di}:${ii}"><span class="upload-note">Das Original wird gespeichert; vor der KAC-Übertragung automatisch auf 240×240 skaliert und komprimiert.</span></div>`:'<p class="upload-note">KAC speichert Bildseiten dauerhaft. Häufige Kamera-Uploads belasten den Flash-Speicher; empfohlen sind mindestens 3600 Sekunden.</p>'}</div>`}).join('')}
+function renderDevices(){return model.devices.map((d,di)=>{const b=path('devices',di);return `<section><div class="head"><h2>KAC-Gerät ${di+1}</h2>${button(`device-del:${di}`,'Gerät entfernen','danger')}</div><div class="grid">
+${field('Gerätename',path(b,'name'),d.name)}${field('Host / IP',path(b,'host'),d.host)}${field('Geräteschlüssel',path(b,'key'),d.key,'password',`placeholder="${d.key_configured?'Gespeicherter Schlüssel bleibt erhalten':'Erforderlich'}"`)}${field('KAC-Zeitlimit',path(b,'timeout_seconds'),d.timeout_seconds,'number','min="1" max="120" data-number="int"')}${field('Sekunden pro Seite',path(b,'rotation_seconds'),d.rotation_seconds,'number','min="5" max="255" data-number="int"')}${check('Helligkeit überschreiben',path(b,'brightness_enabled'),d.brightness_enabled)}${field('Helligkeit',path(b,'brightness'),d.brightness,'number','min="0" max="100" data-number="int"')}${field('POSIX-Zeitzone',path(b,'timezone'),d.timezone)}
+</div><details><summary>Helligkeitsplan</summary><div class="grid">${check('Plan senden',path(b,'brightness_schedule_enabled'),d.brightness_schedule_enabled)}${field('Tag',path(b,'brightness_day'),d.brightness_day,'number','min="0" max="100" data-number="int"')}${field('Nacht',path(b,'brightness_night'),d.brightness_night,'number','min="0" max="100" data-number="int"')}${field('Nacht ab Stunde',path(b,'night_from'),d.night_from,'number','min="0" max="23" data-number="int"')}${field('Nacht bis Stunde',path(b,'night_until'),d.night_until,'number','min="0" max="23" data-number="int"')}</div></details>
+<div class="actions">${button(`page-add:${di}`,'+ Textseite')}${button(`image-add:${di}`,'+ Bildseite')}</div>${renderPages(di,d.pages??[])}${renderImages(di,d.images??[])}</section>`}).join('')}
+function render(){normalize();app.innerHTML=`<section><h2>Allgemein</h2><div class="grid">${field('Aktualisierungsintervall (s)','update_interval_seconds',model.update_interval_seconds,'number','min="1" max="3600" data-number="int"')}${select('Textbehandlung','text_mode',model.text_mode,[['transliterate','Umschreiben'],['strict','Strikt']])}${field('Home-Assistant-Zeitlimit (s)','home_assistant_timeout_seconds',model.home_assistant_timeout_seconds,'number','min="1" max="120" data-number="int"')}${check('Testlauf (nichts senden)','dry_run',model.dry_run)}</div></section>
+<section><div class="head"><h2>Entitätsaliase</h2>${button('entity-add','+ Alias')}</div><p class="muted">Im Entitätsfeld kann über alle aktuellen Home-Assistant-Entitäten und Anzeigenamen gesucht werden.</p>${model.entities.map((e,i)=>`<div class="entity-row">${field('Alias',path('entities',i,'alias'),e.alias)}${field('Home-Assistant-Entität',path('entities',i,'entity_id'),e.entity_id,'text','list="ha-entities" placeholder="Entität suchen"')}${button(`entity-del:${i}`,'Entfernen','danger')}</div>`).join('')}</section>
+<section><div class="head"><h2>Formatvorlagen</h2>${button('format-add','+ Vorlage')}</div>${model.formats.map((f,i)=>`<div class="entity-row">${field('Name',path('formats',i,'name'),f.name)}<label><span>Jinja-Vorlage</span><textarea data-path="${path('formats',i,'template')}">${esc(f.template)}</textarea></label>${button(`format-del:${i}`,'Entfernen','danger')}</div>`).join('')}</section>
+<div class="actions">${button('device-add','+ KAC-Gerät','primary')}</div>${renderDevices()}`;refreshLists()}
+app.addEventListener('input',e=>{const p=e.target.dataset.path;if(!p)return;let v=e.target.type==='checkbox'?e.target.checked:e.target.value;if(e.target.dataset.number==='int')v=v===''?null:parseInt(v,10);if(e.target.dataset.number==='float')v=v===''?null:parseFloat(v);setAt(model,p,v);if(p.includes('.alias')||p.includes('.name'))refreshLists()});
+app.addEventListener('change',e=>{const p=e.target.dataset.path;if(p&&e.target.tagName==='SELECT'){setAt(model,p,e.target.value);if(p.endsWith('source_type'))render()}const match=p?.match(/^entities\.(\d+)\.entity_id$/);if(match&&e.target.value&&!model.entities[Number(match[1])].alias){let alias=e.target.value.split('.').slice(1).join('_').replace(/[^A-Za-z0-9_]/g,'_');if(!/^[A-Za-z_]/.test(alias))alias=`entity_${alias}`;model.entities[Number(match[1])].alias=alias;render()}const u=e.target.dataset.upload;if(u&&e.target.files[0])upload(u,e.target.files[0])});
+app.addEventListener('click',e=>{const a=e.target.closest('button')?.dataset.action;if(!a)return;const [kind,...n]=a.split(':');const x=n.map(Number);if(kind==='entity-add')model.entities.push({alias:'',entity_id:''});if(kind==='entity-del')model.entities.splice(x[0],1);if(kind==='format-add')model.formats.push({name:'',template:'{{ value }}'});if(kind==='format-del')model.formats.splice(x[0],1);if(kind==='device-add')model.devices.push(newDevice());if(kind==='device-del')model.devices.splice(x[0],1);if(kind==='page-add')model.devices[x[0]].pages.push(newPage());if(kind==='page-del')model.devices[x[0]].pages.splice(x[1],1);if(kind==='row-add')model.devices[x[0]].pages[x[1]].rows.push(newRow());if(kind==='row-del')model.devices[x[0]].pages[x[1]].rows.splice(x[2],1);if(kind==='image-add')model.devices[x[0]].images.push(newImage());if(kind==='image-del')model.devices[x[0]].images.splice(x[1],1);if(kind==='upload')document.querySelector(`[data-upload="${x[0]}:${x[1]}"]`).click();if(kind!=='upload')render()});
+async function upload(ref,file){status('Upload läuft …');try{const r=await fetch(`api/upload?filename=${encodeURIComponent(file.name)}`,{method:'POST',body:file});const j=await r.json();if(!r.ok)throw Error(j.error||r.statusText);const [di,ii]=ref.split(':').map(Number);model.devices[di].images[ii].source=j.source;render();status('Grafik hochgeladen – Konfiguration noch speichern.','ok')}catch(e){status(e.message,'error')}}
+function status(message,cls='muted'){statusEl.textContent=message;statusEl.className=`status ${cls}`}
+async function save(){status('Prüfe und speichere …');try{const r=await fetch('api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(model)});const j=await r.json();if(!r.ok)throw Error(j.error||r.statusText);model=j;render();status('Gespeichert und aktiv.','ok')}catch(e){status(e.message,'error')}}
+document.querySelector('#save').addEventListener('click',save);
+async function getJson(url){const r=await fetch(url),j=await r.json();if(!r.ok)throw Error(j.error||r.statusText);return j}
+Promise.allSettled([getJson('api/config'),getJson('api/entities')]).then(([configuration,entities])=>{if(configuration.status==='rejected')throw configuration.reason;model=configuration.value;catalog=entities.status==='fulfilled'?entities.value:[];render();entities.status==='fulfilled'?status(`${catalog.length} Entitäten geladen.`,'ok'):status(`Konfiguration geladen; Entitätsliste nicht verfügbar: ${entities.reason.message}`,'error')}).catch(e=>status(e.message,'error'));
+</script>
+</body>
+</html>

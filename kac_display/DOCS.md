@@ -2,7 +2,7 @@
 
 ## Ergebnis und Voraussetzungen
 
-Dieses Add-on liest frei auswählbare Home-Assistant-Entitäten, formatiert sie zu KAC-Seiten und sendet die Seiten regelmäßig an ein oder mehrere KAC-Geräte. Unterstützt werden alle derzeit dokumentierten Zeilentypen, Teilübertragung großer Seitensätze und die KAC-Bild-Slots.
+Dieses Add-on liest frei auswählbare Home-Assistant-Entitäten, formatiert sie zu KAC-Seiten und sendet die Seiten regelmäßig an ein oder mehrere KAC-Geräte. Unterstützt werden alle derzeit dokumentierten Zeilentypen, Teilübertragung großer Seitensätze, die KAC-Bild-Slots, Kamera-/Medienbilder und hochgeladene statische Grafiken.
 
 Voraussetzungen:
 
@@ -19,8 +19,8 @@ Voraussetzungen:
 2. `https://github.com/highno/kac-home-assistant-addon` als Repository hinzufügen.
 3. Alternativ den Installationsbutton in der Repository-README verwenden.
 4. **KAC Display Bridge** auswählen und installieren.
-5. Auf der Registerkarte **Konfiguration** Entitäten, Vorlagen, Geräte, Seiten und Zeilen über die Formulare anlegen.
-6. Speichern und das Add-on starten.
+5. Das Add-on starten und **Web UI öffnen** wählen.
+6. Entitäten, Vorlagen, Geräte, Seiten, Zeilen und Bilder im grafischen Editor anlegen und speichern. Änderungen werden ohne manuellen Neustart übernommen.
 
 Für eine rein lokale Installation kann der Ordner `kac_display` in den lokalen Apps/Add-ons-Ordner der Home-Assistant-Installation kopiert und der App Store neu geladen werden.
 
@@ -38,15 +38,15 @@ Für eine rein lokale Installation kann der Ordner `kac_display` in den lokalen 
 | `formats` | leer | Benannte Jinja-Formatvorlagen |
 | `devices` | leer | KAC-Verbindungen einschließlich Seiten, Zeilen und Bilder |
 
-Geänderte Optionen werden nach dem Speichern und einem Neustart des Add-ons eingelesen.
+Die Registerkarte **Konfiguration** bleibt als kompatible Grundeinstellung für Version 0.2 erhalten. Für die durchsuchbaren Felder und Datei-Uploads wird ab Version 0.3 die Schaltfläche **Web UI öffnen** verwendet. Die Weboberfläche läuft als Home-Assistant-Ingress und ist damit über die Home-Assistant-Anmeldung geschützt.
 
 ## Grafischer Schnellstart
 
-Die Listen auf der Konfigurationsseite besitzen jeweils eine Schaltfläche zum Hinzufügen. Die Reihenfolge ist wichtig, weil Seiten und Zeilen auf zuvor angelegte Aliase beziehungsweise Formatnamen verweisen:
+Die Listen in der Weboberfläche besitzen jeweils eine Schaltfläche zum Hinzufügen. Die Reihenfolge ist wichtig, weil Seiten und Zeilen auf zuvor angelegte Aliase beziehungsweise Formatnamen verweisen:
 
 1. Unter **Home-Assistant-Entitäten** einen Eintrag hinzufügen:
    - Alias: `temperature`
-   - Entitäts-ID: `sensor.living_room_temperature`
+   - Im Entitätsfeld `sensor.living_room_temperature` über ID oder Anzeigenamen suchen und auswählen.
 2. Optional unter **Formatvorlagen** einen Eintrag hinzufügen:
    - Name: `temperature`
    - Jinja-Vorlage: `{{ value | float(0) | round(1) }} °C`
@@ -57,7 +57,7 @@ Die Listen auf der Konfigurationsseite besitzen jeweils eine Schaltfläche zum H
 5. Innerhalb der Seite unter **Zeilen** eine Zeile hinzufügen:
    - Zeilentyp: `big`
    - Beschriftung: `Temperature`
-   - Entitätsalias: `temperature`
+   - Entitätsalias: im Suchfeld `temperature` auswählen
    - Formatvorlage: `temperature`
 6. Leere, für den gewählten Zeilentyp nicht benötigte Felder bleiben leer.
 
@@ -65,13 +65,13 @@ Mindestens ein Gerät und eine Textseite pro Gerät sind erforderlich. Entitäts
 
 ### Bestehende Installationen
 
-Version 0.2.0 liest eine vorhandene `kac.yaml` automatisch weiter, solange die grafische Liste **KAC-Geräte** leer ist. Sobald dort mindestens ein Gerät gespeichert wurde, verwendet das Add-on ausschließlich die grafische Konfiguration. Dadurch kann eine bestehende Installation ohne Unterbrechung schrittweise übertragen werden.
+Version 0.3 liest eine vorhandene 0.2-Konfiguration oder `kac.yaml` automatisch weiter, solange im neuen Webeditor noch nichts gespeichert wurde. Beide Varianten werden beim Öffnen in das Editormodell übertragen und können dort direkt gespeichert und damit migriert werden. Eine vorhandene `kac.yaml` bleibt als Fallback erhalten und wird nicht verändert.
 
 Der Geräteschlüssel muss gemäß KAC-Dokumentation 1–32 druckbare ASCII-Zeichen ohne Leerzeichen enthalten.
 
 ## Entitäten und Vorlagen
 
-`entities` ordnet frei gewählte Aliase Home-Assistant-`entity_id`s zu. Eine Zeile wählt mit `entity` einen Alias aus. In Vorlagen stehen dann zur Verfügung:
+`entities` ordnet frei gewählte Aliase Home-Assistant-`entity_id`s zu. Der Webeditor lädt dazu die aktuelle Gesamtliste über die Home-Assistant-API; gesucht werden kann nach Entitäts-ID und Anzeigenamen. Bei der Auswahl wird für ein noch leeres Aliasfeld automatisch ein gültiger Vorschlag aus der Entitäts-ID gebildet. Eine Zeile wählt ihren Alias wiederum über ein Suchfeld aus den bereits angelegten Aliasen. In Vorlagen stehen dann zur Verfügung:
 
 - `value`: der Zustand als Zeichenkette;
 - `attributes`: das Attribut-Dictionary der ausgewählten Entität;
@@ -156,33 +156,22 @@ KAC wählt die sichtbare Seite selbst anhand von Uhrzeit, Rotationsintervall und
 
 KAC-Bilder sind eigenständige Vollbildseiten. Sie können nicht mit Textzeilen kombiniert werden.
 
-```yaml
-images:
-  - slot: 1
-    source: images/photo.png
-    fit: contain
-    upload: on_change
-    quality: 90
-
-  - slot: 2
-    source: images/weather.gif
-    fit: cover
-    gif_colors: 64
-    gif_min_delay_ms: 100
-
-  - slot: 5
-    delete: true
-```
-
 - `slot`: 1–5.
+- `source_type: file`: hochgeladene oder bereits unter `/config` vorhandene Datei.
+- `source_type: entity`: Kamera, Medienplayer oder eine andere Entität mit einem von Home Assistant bereitgestellten `entity_picture`.
 - `fit: cover`: mittiger quadratischer Ausschnitt; `contain`: ganzes Bild mit schwarzen Rändern.
 - `upload: on_change`: nur nach Datei-/Optionsänderung; `startup`: bei jedem Add-on-Start.
-- Statische Eingaben werden als 240×240 Baseline-JPG erzeugt.
+- `refresh_seconds`: frühester erneuter Abruf einer Bild-Entität, standardmäßig 3600 Sekunden und mindestens 60 Sekunden.
+- **Statische Grafik hochladen** akzeptiert JPEG, PNG, WebP und BMP bis 10 MB. Die Originaldatei wird unter `/config/uploads` abgelegt.
+- Statische Eingaben werden immer neu auf 240×240 Pixel skaliert, Metadaten werden entfernt und ein nicht-progressives JPEG mit 4:2:0-Unterabtastung wird erzeugt.
+- Die maximale JPEG-Qualität ist standardmäßig 70. Das Add-on senkt sie bei Bedarf schrittweise bis zur konfigurierten Zielgröße von standardmäßig 30 KB (Untergrenze Qualität 20).
 - Animierte Eingaben werden als 240×240 GIF mit gemeinsamer Palette erzeugt.
 - Das vorbereitete Ergebnis darf höchstens 1 MB groß sein.
 - KAC erlaubt insgesamt nur ein GIF. Ein GIF reserviert laut Firmware-Dokumentation etwa 23,7 KB RAM und reduziert die Zahl möglicher Textseiten deutlich.
 
-Das Add-on lädt keine Bilder aus Home-Assistant-Kamera-/Media-Entitäten oder URLs. Diese Version verarbeitet absichtlich nur lokale Dateien im App-Konfigurationsordner.
+KAC speichert Bildseiten dauerhaft, sodass sie auch nach einem Neustart vorhanden sind. Eine Kamera ist deshalb als regelmäßig erneuertes Standbild gedacht, nicht als Livebild. Sehr häufige Uploads würden den Flash-Speicher unnötig belasten; der Webeditor warnt davor und verwendet standardmäßig eine Stunde.
+
+Kamera-Entitäten werden über `/api/camera_proxy/{entity_id}` abgerufen, Medienplayer über `/api/media_player_proxy/{entity_id}`. Bei anderen Entitäten wird nur ein relatives, von Home Assistant bereitgestelltes `/api/...`-`entity_picture` akzeptiert. Beliebige externe Bild-URLs werden aus Sicherheitsgründen nicht direkt vom Add-on abgerufen.
 
 ## Text- und Firmwaregrenzen
 
@@ -193,9 +182,10 @@ Das Add-on lädt keine Bilder aus Home-Assistant-Kamera-/Media-Entitäten oder U
 
 ## Sicherheit
 
-- Die KAC-Schnittstelle verwendet dokumentiert nur unverschlüsseltes HTTP. Geräteschlüssel und Messwerte sind im lokalen Netz nicht transportverschlüsselt. KAC empfiehlt ein getrenntes IoT-Netz/VLAN.
-- `homeassistant_api: true` gibt einem Add-on über den Supervisor-Proxy Administratorrechte. Dieser Quellcode verwendet den Token ausschließlich für `GET /states`, aber der Token selbst ist entsprechend sensibel.
-- Schlüssel werden weder in normale Logs noch in gerenderte Seiten geschrieben. Home Assistant speichert grafisch eingegebene Schlüssel geschützt als Add-on-Option. Eine alte `kac.yaml` und optionale Schlüsseldateien gehören trotzdem nicht in ein öffentliches Repository.
+- Die KAC-Schnittstelle verwendet dokumentiert nur unverschlüsseltes HTTP. Geräteschlüssel, Messwerte und übertragene Bilder sind im lokalen Netz nicht transportverschlüsselt. KAC empfiehlt ein getrenntes IoT-Netz/VLAN.
+- `homeassistant_api: true` gibt einem Add-on über den Supervisor-Proxy Administratorrechte. Dieser Quellcode verwendet den Token für die Entitätsliste, Zustände sowie Home-Assistants Kamera-/Medien-Bildproxys; der Token selbst ist entsprechend sensibel.
+- Die Konfigurations-Weboberfläche ist nur über Home Assistant Ingress erreichbar. Geräteschlüssel werden beim erneuten Öffnen nicht an den Browser zurückgegeben, sondern serverseitig beibehalten.
+- Schlüssel werden weder in normale Logs noch in gerenderte Seiten geschrieben. Der Webeditor speichert sie im privaten, von Home Assistant gesicherten Add-on-Datenverzeichnis; ältere 0.2-Einstellungen liegen als Add-on-Option vor. Eine alte `kac.yaml` und optionale Schlüsseldateien gehören trotzdem nicht in ein öffentliches Repository.
 
 ## Offene bzw. bewusst nicht erfundene Punkte
 
@@ -204,6 +194,7 @@ Das Add-on lädt keine Bilder aus Home-Assistant-Kamera-/Media-Entitäten oder U
 3. Bilder und Messwertzeilen können laut dokumentiertem Modell nicht auf derselben Seite platziert werden.
 4. KAC hat keine dokumentierte HTTPS-Schnittstelle, keine dokumentierte automatische Geräteerkennung und keine dokumentierte Push-Verbindung. Darum werden Host, Schlüssel und Aktualisierungsintervall explizit konfiguriert.
 5. Das Add-on wurde offline gegen simulierte HTTP-Antworten getestet. Ein echter Hardware-End-to-End-Test benötigt ein erreichbares SmallTV-Ultra-Gerät mit KAC und bleibt vor der produktiven Nutzung erforderlich.
+6. Absolute externe `entity_picture`-URLs werden nicht direkt geladen. Für Kamera- und Medienplayer-Entitäten werden die offiziellen Home-Assistant-Proxys benutzt; andere Entitäten benötigen einen relativen `/api/...`-Bildpfad.
 
 ## Fehlerdiagnose
 
@@ -213,6 +204,7 @@ Das Add-on lädt keine Bilder aus Home-Assistant-Kamera-/Media-Entitäten oder U
 - **Device/Guide statt eigener Seiten:** seit zehn Minuten keine Daten oder nie erfolgreich gesendet.
 - **`voll: true`:** weniger Textseiten konfigurieren; insbesondere GIF entfernen/ersetzen.
 - **Bild HTTP 422:** meist zweites GIF, progressives/ungeeignetes Bild oder Firmwarelimit. Das Add-on konvertiert Eingaben, meldet aber die konkrete Geräteantwort.
+- **Bild-Entität nicht verfügbar:** Entität in der Weboberfläche erneut suchen; bei anderen Domänen als Kamera/Medienplayer prüfen, ob `entity_picture` vorhanden und ein relativer `/api/...`-Pfad ist.
 - **Vorlagenfehler:** `dry_run: true` aktivieren und Add-on-Log lesen.
 
 ## Verifizierte Quellen
@@ -221,5 +213,6 @@ Das Add-on lädt keine Bilder aus Home-Assistant-Kamera-/Media-Entitäten oder U
 - [Offizieller KAC-Changelog](https://github.com/GiT-BeDa/KleinerAnzeigeComputer/blob/main/CHANGELOG.md)
 - [Offizielles KAC-Python-Hilfsmodul](https://github.com/GiT-BeDa/KleinerAnzeigeComputer/blob/main/tools/kac.py)
 - [Home Assistant: App-Konfiguration](https://contributors.home-assistant.io/apps/reference/configuration/)
+- [Home Assistant: REST-API einschließlich Kamera-Proxy](https://developers.home-assistant.io/docs/api/rest/)
 - [Home Assistant: Kommunikation mit Core/Supervisor](https://contributors.home-assistant.io/apps/guides/communication/)
 - [Home Assistant: Repository erstellen und hinzufügen](https://contributors.home-assistant.io/apps/guides/repository/)

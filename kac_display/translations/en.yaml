@@ -92,8 +92,12 @@ configuration:
         fields:
           slot:
             name: "Image slot"
+          source_type:
+            name: "Image source"
           source:
             name: "Local image path"
+          entity_id:
+            name: "Camera/media entity"
           fit:
             name: "Fit"
           upload:
@@ -101,7 +105,12 @@ configuration:
           delete:
             name: "Delete slot"
           quality:
-            name: "JPG quality"
+            name: "Maximum JPG quality"
+          max_jpeg_kb:
+            name: "JPEG target size (KB)"
+          refresh_seconds:
+            name: "Image refresh (seconds)"
+            description: "KAC stores images persistently; at least 3600 seconds is recommended."
           gif_colors:
             name: "GIF colors"
           gif_min_delay_ms:

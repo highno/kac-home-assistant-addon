@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from app.config import config_from_options, kac_settings, load_config
+from app.config import config_from_options, kac_settings, load_config, options_from_config
 from app.errors import ConfigurationError
 
 
@@ -92,6 +92,44 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config["update_interval_seconds"], 15)
         self.assertEqual(config["devices"][0]["pages"][0]["rows"][0]["type"], "g")
         self.assertEqual(config["devices"][0]["settings"]["brightness"], 75)
+
+    def test_graphical_camera_image_source_is_converted(self):
+        options = {
+            "entities": [],
+            "formats": [],
+            "devices": [
+                {
+                    "name": "living",
+                    "host": "192.168.1.50",
+                    "key": "abc123",
+                    "pages": [{"title": "Home", "rows": []}],
+                    "images": [
+                        {
+                            "slot": 1,
+                            "source_type": "entity",
+                            "entity_id": "camera.garden",
+                            "refresh_seconds": 120,
+                            "max_jpeg_kb": 30,
+                        }
+                    ],
+                }
+            ],
+        }
+        image = config_from_options(options)["devices"][0]["images"][0]
+        self.assertEqual(image["source_type"], "entity")
+        self.assertEqual(image["entity_id"], "camera.garden")
+        self.assertEqual(image["refresh_seconds"], 120)
+
+    def test_legacy_configuration_can_be_migrated_to_editor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "kac.yaml"
+            path.write_text(VALID, encoding="utf-8")
+            legacy = load_config(path)
+        options = options_from_config(legacy, {"dry_run": False})
+        self.assertEqual(options["entities"][0]["alias"], "temp")
+        self.assertEqual(options["devices"][0]["pages"][0]["rows"][0]["type"], "big")
+        converted = config_from_options(options)
+        self.assertEqual(converted["devices"][0]["pages"][0]["rows"][0]["type"], "g")
 
 
 if __name__ == "__main__":

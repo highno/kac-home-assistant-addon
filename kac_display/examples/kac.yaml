@@ -1,6 +1,6 @@
 # Detailed configuration for KAC Display Bridge.
 # Legacy reference configuration. New installations use the graphical
-# Configuration tab in Home Assistant instead.
+# Web UI in Home Assistant instead.
 version: 1
 
 # Keep this below 180 seconds: KAC shows a red status dot after three minutes

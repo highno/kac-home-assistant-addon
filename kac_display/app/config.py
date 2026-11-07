@@ -31,6 +31,17 @@ ROW_TYPES = {
     "-": "-",
 }
 
+FRIENDLY_ROW_TYPES = {
+    "h": "heading",
+    "k": "value",
+    "d": "down",
+    "u": "up",
+    "b": "bar",
+    "g": "big",
+    "s": "sparkline",
+    "-": "empty",
+}
+
 
 def _fail(path: str, message: str) -> None:
     raise ConfigurationError(f"{path}: {message}")
@@ -145,17 +156,53 @@ def _validate_images(images: Any, path: str) -> list[dict[str, Any]]:
         if not isinstance(deleting, bool):
             _fail(f"{item_path}.delete", "must be true or false")
         if deleting:
-            if "source" in image:
-                _fail(item_path, "delete and source cannot be used together")
-        elif not isinstance(image.get("source"), str) or not image["source"]:
-            _fail(f"{item_path}.source", "is required unless delete is true")
+            if "source" in image or "entity_id" in image:
+                _fail(item_path, "delete cannot be combined with an image source")
+        else:
+            source_type = image.get("source_type", "file")
+            if source_type not in {"file", "entity"}:
+                _fail(f"{item_path}.source_type", "must be file or entity")
+            image["source_type"] = source_type
+            if source_type == "file":
+                if not isinstance(image.get("source"), str) or not image["source"]:
+                    _fail(f"{item_path}.source", "is required for a local file")
+                image.pop("entity_id", None)
+            else:
+                entity_id = image.get("entity_id")
+                if (
+                    not isinstance(entity_id, str)
+                    or "." not in entity_id
+                    or any(char.isspace() for char in entity_id)
+                ):
+                    _fail(
+                        f"{item_path}.entity_id",
+                        "must be a Home Assistant entity_id",
+                    )
+                image.pop("source", None)
         if image.get("fit", "cover") not in {"cover", "contain"}:
             _fail(f"{item_path}.fit", "must be cover or contain")
         if image.get("upload", "on_change") not in {"on_change", "startup"}:
             _fail(f"{item_path}.upload", "must be on_change or startup")
-        quality = image.get("quality", 90)
+        quality = image.get("quality", 70)
         if isinstance(quality, bool) or not isinstance(quality, int) or not 1 <= quality <= 100:
             _fail(f"{item_path}.quality", "must be an integer from 1 to 100")
+        target_kb = image.get("max_jpeg_kb", 30)
+        if (
+            isinstance(target_kb, bool)
+            or not isinstance(target_kb, int)
+            or not 5 <= target_kb <= 1024
+        ):
+            _fail(f"{item_path}.max_jpeg_kb", "must be an integer from 5 to 1024")
+        refresh = image.get("refresh_seconds", 3600)
+        if (
+            isinstance(refresh, bool)
+            or not isinstance(refresh, int)
+            or not 60 <= refresh <= 86400
+        ):
+            _fail(
+                f"{item_path}.refresh_seconds",
+                "must be an integer from 60 to 86400",
+            )
         colors = image.get("gif_colors", 64)
         if isinstance(colors, bool) or not isinstance(colors, int) or not 2 <= colors <= 256:
             _fail(f"{item_path}.gif_colors", "must be an integer from 2 to 256")
@@ -164,7 +211,9 @@ def _validate_images(images: Any, path: str) -> list[dict[str, Any]]:
             _fail(f"{item_path}.gif_min_delay_ms", "must be an integer from 20 to 60000")
         image.setdefault("fit", "cover")
         image.setdefault("upload", "on_change")
-        image.setdefault("quality", 90)
+        image.setdefault("quality", 70)
+        image.setdefault("max_jpeg_kb", 30)
+        image.setdefault("refresh_seconds", 3600)
         image.setdefault("gif_colors", 64)
         image.setdefault("gif_min_delay_ms", 100)
         result.append(image)
@@ -389,15 +438,21 @@ def config_from_options(options: dict[str, Any]) -> dict[str, Any]:
             image: dict[str, Any] = {
                 "slot": ui_image.get("slot"),
                 "delete": bool(ui_image.get("delete", False)),
+                "source_type": ui_image.get("source_type", "file"),
                 "fit": ui_image.get("fit", "cover"),
                 "upload": ui_image.get("upload", "on_change"),
-                "quality": ui_image.get("quality", 90),
+                "quality": ui_image.get("quality", 70),
+                "max_jpeg_kb": ui_image.get("max_jpeg_kb", 30),
+                "refresh_seconds": ui_image.get("refresh_seconds", 3600),
                 "gif_colors": ui_image.get("gif_colors", 64),
                 "gif_min_delay_ms": ui_image.get("gif_min_delay_ms", 100),
             }
             source = _nonempty(ui_image, "source")
             if source is not None:
                 image["source"] = source
+            entity_id = _nonempty(ui_image, "entity_id")
+            if entity_id is not None:
+                image["entity_id"] = entity_id
             images.append(image)
         device["images"] = images
         devices.append(device)
@@ -414,6 +469,60 @@ def config_from_options(options: dict[str, Any]) -> dict[str, Any]:
         "devices": devices,
     }
     return validate_config(raw, "/config")
+
+
+def options_from_config(
+    config: dict[str, Any], base_options: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Convert a validated legacy config into the ingress editor model."""
+    options = deepcopy(base_options or {})
+    options.update(
+        update_interval_seconds=config["update_interval_seconds"],
+        text_mode=config["text_mode"],
+        home_assistant_timeout_seconds=config["home_assistant"]["timeout_seconds"],
+        entities=[
+            {"alias": alias, "entity_id": entity_id}
+            for alias, entity_id in config["entities"].items()
+        ],
+        formats=[
+            {"name": name, "template": template}
+            for name, template in config["formats"].items()
+        ],
+    )
+    devices: list[dict[str, Any]] = []
+    for device in config["devices"]:
+        settings = device["settings"]
+        schedule = settings.get("brightness_schedule", {})
+        ui_device: dict[str, Any] = {
+            "name": device["name"],
+            "host": device["host"],
+            "key": device["key"],
+            "timeout_seconds": int(device["timeout_seconds"]),
+            "rotation_seconds": settings.get("rotation_seconds", 30),
+            "brightness_enabled": "brightness" in settings,
+            "brightness": settings.get("brightness", 75),
+            "timezone": settings.get("timezone", ""),
+            "brightness_schedule_enabled": bool(schedule),
+            "brightness_day": schedule.get("day", 90),
+            "brightness_night": schedule.get("night", 10),
+            "night_from": schedule.get("night_from", 23),
+            "night_until": schedule.get("night_until", 7),
+            "pages": [],
+            "images": deepcopy(device["images"]),
+        }
+        for page in device["pages"]:
+            ui_rows: list[dict[str, Any]] = []
+            for row in page["rows"]:
+                ui_row = deepcopy(row)
+                ui_row["type"] = FRIENDLY_ROW_TYPES[ui_row["type"]]
+                values = ui_row.pop("values", None)
+                if values is not None:
+                    ui_row["values_csv"] = ", ".join(str(value) for value in values)
+                ui_rows.append(ui_row)
+            ui_device["pages"].append({"title": page["title"], "rows": ui_rows})
+        devices.append(ui_device)
+    options["devices"] = devices
+    return options
 
 
 def kac_settings(settings: dict[str, Any]) -> dict[str, Any]:
