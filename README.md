@@ -17,4 +17,3 @@ repository.yaml         repository metadata for Home Assistant
 ```
 
 Repository URL: <https://github.com/highno/kac-home-assistant-addon>
-

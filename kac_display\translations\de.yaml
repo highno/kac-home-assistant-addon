@@ -1,0 +1,10 @@
+configuration:
+  config_file:
+    name: "Konfigurationsdatei"
+    description: "Pfad zur ausführlichen KAC-Konfiguration im Add-on-Konfigurationsordner."
+  log_level:
+    name: "Protokollstufe"
+    description: "Detailgrad der Add-on-Protokolle."
+  dry_run:
+    name: "Testlauf"
+    description: "Seiten erzeugen und protokollieren, aber nichts an KAC-Geräte senden."

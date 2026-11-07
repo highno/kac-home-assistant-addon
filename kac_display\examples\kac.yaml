@@ -1,0 +1,135 @@
+# Detailed configuration for KAC Display Bridge.
+# This file is copied to /config/kac.yaml on the first start of the add-on.
+version: 1
+
+# Keep this below 180 seconds: KAC shows a red status dot after three minutes
+# without fresh dashboard data. Fast updates do not write KAC data to flash.
+update_interval_seconds: 10
+
+# transliterate: ä -> ae, unsupported characters -> ?
+# strict: reject every character except printable ASCII and °
+text_mode: transliterate
+
+home_assistant:
+  timeout_seconds: 10
+
+# Give arbitrary Home Assistant entity IDs short names for templates and rows.
+entities:
+  living_temperature: sensor.living_room_temperature
+  living_humidity: sensor.living_room_humidity
+  phone_battery: sensor.phone_battery_level
+  house_power: sensor.house_power
+  download_rate: sensor.router_download_rate
+  upload_rate: sensor.router_upload_rate
+  front_door: binary_sensor.front_door
+
+# Named Jinja templates format a row's selected entity state. This is a small,
+# sandboxed Jinja environment, not Home Assistant's full template environment.
+formats:
+  temperature: "{{ value | float(0) | round(1) }} °C"
+  percent: "{{ value | float(0) | round(0) }} %"
+  watts: "{{ value | float(0) | round(0) }} W"
+  door_state: "{{ 'OPEN' if value == 'on' else 'closed' }}"
+
+devices:
+  - name: living_room_kac
+    # Host or IP only. KAC is documented as plain HTTP on port 80.
+    host: 192.168.1.50
+
+    # The device key is shown on KAC's Device/setup page. Instead of key, you
+    # may set key_file to a path relative to this file (or an absolute path).
+    key: CHANGE-ME
+    timeout_seconds: 10
+
+    settings:
+      rotation_seconds: 20
+      # brightness: 80  # optional dashboard override, 0..100
+      timezone: CET-1CEST,M3.5.0,M10.5.0/3
+      brightness_schedule:
+        day: 90
+        night: 10
+        night_from: 23
+        night_until: 7
+
+    pages:
+      - title: Home
+        rows:
+          - type: heading
+            label: Living room
+            entity: living_temperature
+            format: temperature
+
+          - type: big
+            label: Temperature
+            entity: living_temperature
+            format: temperature
+            alert: "{{ value | float(0) > 28 }}"
+
+          - type: value
+            label: Humidity
+            entity: living_humidity
+            format: percent
+
+          - type: bar
+            label: Phone
+            entity: phone_battery
+            percent: "{{ value | float(0) }}"
+            format: percent
+            alert: "{{ value | float(0) < 20 }}"
+
+          - type: value
+            label: Front door
+            entity: front_door
+            format: door_state
+            alert: "{{ value == 'on' }}"
+
+          - type: empty
+
+          - type: value
+            label: Unit
+            value: "{{ entities.living_temperature.attributes.get('unit_of_measurement', 'unknown') }}"
+
+      - title: Network
+        rows:
+          - type: heading
+            label: Router
+            value: Traffic
+
+          - type: down
+            entity: download_rate
+            # Scale the real rate to 0..100 for the bar.
+            percent: "{{ (value | float(0) / 1000 * 100) | round(0) }}"
+            value: "{{ value | float(0) | round(0) }} Mbit/s"
+
+          - type: up
+            entity: upload_rate
+            percent: "{{ (value | float(0) / 200 * 100) | round(0) }}"
+            value: "{{ value | float(0) | round(0) }} Mbit/s"
+
+          - type: sparkline
+            label: Power
+            entity: house_power
+            format: watts
+            history_points: 20
+            scale_min: 0
+            scale_max: 5000
+            alert: "{{ value | float(0) > 4500 }}"
+
+    # KAC image pages are separate full-screen pages after the text pages.
+    # Sources are local files relative to this YAML file. Static files are
+    # converted to baseline JPG; animations are converted to GIF. KAC allows
+    # slots 1..5, no more than one GIF, and at most 1 MB per prepared image.
+    images: []
+    # images:
+    #   - slot: 1
+    #     source: images/family-photo.png
+    #     fit: contain       # contain (black bars) or cover (center crop)
+    #     upload: on_change  # on_change or on every add-on startup
+    #     quality: 90
+    #   - slot: 2
+    #     source: images/weather.gif
+    #     fit: cover
+    #     gif_colors: 64
+    #     gif_min_delay_ms: 100
+    #   - slot: 5
+    #     delete: true       # explicitly remove this slot once
