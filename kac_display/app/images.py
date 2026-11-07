@@ -17,7 +17,7 @@ try:
 except ImportError:  # Covered by the container dependency; keeps errors actionable.
     svg2png = None
 
-from .errors import ImageError
+from .errors import BridgeError, ImageError
 from .ha import HomeAssistantClient
 from .kac import KACClient
 
@@ -31,8 +31,13 @@ _SVG_CSS_REFERENCE = re.compile(rb"url\(\s*['\"]?([^)'\"]+)", re.IGNORECASE)
 
 
 def _is_svg(raw: bytes) -> bool:
+    if (
+        raw.startswith((b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a", b"BM"))
+        or (raw.startswith(b"RIFF") and raw[8:12] == b"WEBP")
+    ):
+        return False
     prefix = raw[:4096].lstrip(b"\xef\xbb\xbf\x00\t\r\n ").lower()
-    return b"<svg" in prefix
+    return prefix.startswith(b"<") and re.search(rb"<svg(?:\s|>)", prefix) is not None
 
 
 def _rasterize_svg(raw: bytes, source_name: str) -> bytes:
@@ -206,8 +211,8 @@ class ImageSynchronizer:
         config_dir: str | Path,
         status: dict[str, Any] | None = None,
         ha: HomeAssistantClient | None = None,
-    ) -> list[str]:
-        messages: list[str] = []
+    ) -> list[tuple[str, str]]:
+        messages: list[tuple[str, str]] = []
         media_status = (
             str((status or {}).get("medien", "")).split(",")
             if (status or {}).get("medien") is not None
@@ -218,44 +223,43 @@ class ImageSynchronizer:
         ] = []
         for image in device["images"]:
             slot = image["slot"]
-            if image.get("delete"):
-                prepared.append((image, None, "deleted", None, None))
-                continue
-            cache_key = f"{device['name']}:{slot}"
-            if image.get("source_type", "file") == "entity":
-                now = time.monotonic()
-                if (
-                    cache_key in self.last_entity_fetch
-                    and now - self.last_entity_fetch[cache_key]
-                    < image["refresh_seconds"]
-                ):
+            try:
+                if image.get("delete"):
+                    prepared.append((image, None, "deleted", None, None))
                     continue
-                if ha is None:
-                    raise ImageError(
-                        f"{device['name']}: Home Assistant image source requires an API client"
-                    )
-                source_name = image["entity_id"]
-                raw = ha.entity_image(source_name)
-            else:
-                source_path = Path(image["source"])
-                if not source_path.is_absolute():
-                    source_path = Path(config_dir) / source_path
-                try:
-                    raw = source_path.read_bytes()
-                except OSError as exc:
-                    raise ImageError(f"cannot read image {source_path}: {exc}") from exc
-                source_name = str(source_path)
-            fingerprint = self._fingerprint(raw, image)
-            data, extension = prepare_image_bytes(raw, source_name, image)
-            prepared.append((image, source_name, fingerprint, data, extension))
-
-        if sum(extension == "gif" for _, _, _, _, extension in prepared) > 1:
-            raise ImageError(
-                f"{device['name']}: KAC permits only one GIF across image slots"
-            )
+                cache_key = f"{device['name']}:{slot}"
+                if image.get("source_type", "file") == "entity":
+                    now = time.monotonic()
+                    if (
+                        cache_key in self.last_entity_fetch
+                        and now - self.last_entity_fetch[cache_key]
+                        < image["refresh_seconds"]
+                    ):
+                        continue
+                    if ha is None:
+                        raise ImageError(
+                            f"{device['name']}: Home Assistant image source requires an API client"
+                        )
+                    source_name = image["entity_id"]
+                    raw = ha.entity_image(source_name)
+                else:
+                    source_path = Path(image["source"])
+                    if not source_path.is_absolute():
+                        source_path = Path(config_dir) / source_path
+                    try:
+                        raw = source_path.read_bytes()
+                    except OSError as exc:
+                        raise ImageError(f"cannot read image {source_path}: {exc}") from exc
+                    source_name = str(source_path)
+                fingerprint = self._fingerprint(raw, image)
+                data, extension = prepare_image_bytes(raw, source_name, image)
+                prepared.append((image, source_name, fingerprint, data, extension))
+            except BridgeError as exc:
+                messages.append(("error", f"image slot {slot} preparation failed: {exc}"))
 
         # Upload a GIF last because KAC restarts once after receiving its first GIF.
         prepared.sort(key=lambda item: item[4] == "gif")
+        gif_seen = False
         for image, source_name, fingerprint, data, extension in prepared:
             slot = image["slot"]
             cache_key = f"{device['name']}:{slot}"
@@ -263,33 +267,49 @@ class ImageSynchronizer:
             remote_type = (
                 "blocked" if remote_raw is not None and "!" in remote_raw else remote_raw
             )
-            if image.get("delete"):
+            try:
+                if image.get("delete"):
+                    if (
+                        image["upload"] == "on_change"
+                        and self.cache.get(cache_key) == fingerprint
+                        and remote_type in {None, ""}
+                    ):
+                        continue
+                    client.delete_image(slot)
+                    self.cache[cache_key] = fingerprint
+                    messages.append(("info", f"deleted image slot {slot}"))
+                    continue
+                if extension == "gif":
+                    if gif_seen:
+                        messages.append(
+                            (
+                                "error",
+                                f"image slot {slot} skipped: KAC permits only one GIF across image slots",
+                            )
+                        )
+                        continue
+                    gif_seen = True
                 if (
                     image["upload"] == "on_change"
                     and self.cache.get(cache_key) == fingerprint
-                    and remote_type in {None, ""}
+                    and remote_type in {None, extension}
                 ):
+                    if image.get("source_type") == "entity":
+                        self.last_entity_fetch[cache_key] = time.monotonic()
                     continue
-                client.delete_image(slot)
+                assert data is not None and extension is not None and source_name is not None
+                client.upload_image(data, extension, slot)
                 self.cache[cache_key] = fingerprint
-                messages.append(f"deleted image slot {slot}")
-                continue
-            if (
-                image["upload"] == "on_change"
-                and self.cache.get(cache_key) == fingerprint
-                and remote_type in {None, extension}
-            ):
                 if image.get("source_type") == "entity":
                     self.last_entity_fetch[cache_key] = time.monotonic()
-                continue
-            assert data is not None and extension is not None and source_name is not None
-            client.upload_image(data, extension, slot)
-            self.cache[cache_key] = fingerprint
-            if image.get("source_type") == "entity":
-                self.last_entity_fetch[cache_key] = time.monotonic()
-            messages.append(
-                f"uploaded {extension.upper()} from {source_name} to image slot {slot} ({len(data)} bytes)"
-            )
+                messages.append(
+                    (
+                        "info",
+                        f"uploaded {extension.upper()} from {source_name} to image slot {slot} ({len(data)} bytes)",
+                    )
+                )
+            except BridgeError as exc:
+                messages.append(("error", f"image slot {slot} update failed: {exc}"))
         self.save()
         return messages
 

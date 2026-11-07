@@ -206,6 +206,7 @@ Kamera-Entitäten werden über `/api/camera_proxy/{entity_id}`, `image.*`-Entit�
 - **Bild HTTP 422:** meist zweites GIF, progressives/ungeeignetes Bild oder Firmwarelimit. Das Add-on konvertiert Eingaben, meldet aber die konkrete Geräteantwort.
 - **Bild-Entität nicht verfügbar:** Entität in der Weboberfläche erneut suchen; bei anderen Domänen als Kamera/Medienplayer prüfen, ob `entity_picture` vorhanden und ein relativer `/api/...`-Pfad ist.
 - **Ecovacs-Karte:** Wenn die Karte im Home-Assistant-Dialog sichtbar ist, verarbeitet das Add-on ihr SVG ab Version 0.3.1. Liefert bereits Home Assistants `/api/image_proxy/<entity_id>` einen HTTP-500-Fehler oder kein SVG, liegt der Fehler in der Ecovacs-Integration beziehungsweise deren Geräteunterstützung und kann vom Add-on nicht rekonstruiert werden.
+- **Ein einzelner Bild-Slot schlägt fehl:** Ab Version 0.3.2 wird der Fehler für diesen Slot protokolliert; die übrigen lokalen Bilder und Home-Assistant-Bildentitäten werden trotzdem weiterverarbeitet.
 - **Vorlagenfehler:** `dry_run: true` aktivieren und Add-on-Log lesen.
 
 ## Verifizierte Quellen

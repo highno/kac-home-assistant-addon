@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+- Detect PNG, JPEG, GIF, WebP, and BMP by their binary signatures before considering SVG conversion.
+- Avoid mistaking PNG files containing embedded SVG metadata for SVG documents.
+- Isolate image-slot failures so one invalid image no longer prevents camera, media, or Ecovacs slots from updating.
+
 ## 0.3.1
 
 - Fetch `image.*` entities through Home Assistant's documented image proxy.

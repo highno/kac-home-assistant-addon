@@ -110,14 +110,14 @@ class Bridge:
                         name,
                         firmware,
                     )
-                for message in self.image_sync.sync_device(
+                for level, message in self.image_sync.sync_device(
                     device,
                     client,
                     self.config["config_dir"],
                     status,
                     self.ha,
                 ):
-                    LOGGER.info("%s: %s", name, message)
+                    getattr(LOGGER, level)("%s: %s", name, message)
             except BridgeError as exc:
                 LOGGER.error("%s: initialization failed: %s", name, exc)
 
@@ -130,13 +130,13 @@ class Bridge:
             name = device["name"]
             if not self.dry_run:
                 try:
-                    for message in self.image_sync.sync_device(
+                    for level, message in self.image_sync.sync_device(
                         device,
                         self.clients[name],
                         self.config["config_dir"],
                         ha=self.ha,
                     ):
-                        LOGGER.info("%s: %s", name, message)
+                        getattr(LOGGER, level)("%s: %s", name, message)
                 except BridgeError as exc:
                     LOGGER.error("%s: image update failed: %s", name, exc)
             try:
