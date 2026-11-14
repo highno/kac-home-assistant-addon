@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+
+- Show N/A for missing entity states, invalid numeric chart values and row template errors while continuing to send the remaining rows and pages.
+- Skip missing or non-finite sparkline samples and resume chart updates when a valid value returns.
+
 ## 0.3.2
 
 - Detect PNG, JPEG, GIF, WebP, and BMP by their binary signatures before considering SVG conversion.

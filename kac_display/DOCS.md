@@ -111,6 +111,8 @@ Die dokumentierten KAC-Felder werden ohne Erweiterung übertragen: Seitentitel `
 
 ### Sparkline
 
+Fehlt ein Entitätswert, liefert ein Balken oder Verlauf keine gültige Zahl oder schlägt eine Zeilenvorlage fehl, zeigt die betroffene Zeile `N/A` als Text an. Alle Seiten werden weiter aktualisiert. Sobald wieder ein gültiger Wert vorliegt, erscheint die konfigurierte Darstellung. Der Verlauf übernimmt nur gültige Messwerte.
+
 Mit `entity` sammelt das Add-on bei jedem Aktualisierungszyklus einen numerischen Wert und bewahrt bis zu 20 Punkte in `/data` auf:
 
 ```yaml

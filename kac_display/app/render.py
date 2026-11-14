@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections import deque
 import json
+import logging
+from math import isfinite
 from pathlib import Path
 import unicodedata
 from typing import Any
@@ -13,6 +15,9 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from .errors import RenderError
 from .ha import HAState
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 _TRANSLITERATIONS = str.maketrans(
@@ -86,7 +91,7 @@ class TemplateEngine:
                 template = self.environment.from_string(value)
                 self._cache[value] = template
             return template.render(context)
-        except TemplateError as exc:
+        except (TemplateError, ArithmeticError, TypeError, ValueError) as exc:
             raise RenderError(f"template {value!r} failed: {exc}") from exc
 
 
@@ -100,7 +105,9 @@ class HistoryStore:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
             if isinstance(raw, dict):
                 self.values = {
-                    str(key): [float(item) for item in value[-20:]]
+                    str(key): [
+                        number for number in map(float, value[-20:]) if isfinite(number)
+                    ]
                     for key, value in raw.items()
                     if isinstance(value, list)
                 }
@@ -135,12 +142,18 @@ def _as_bool(value: Any, path: str) -> bool:
     raise RenderError(f"{path}: alert template returned non-boolean value {value!r}")
 
 
-def _percent(value: Any, path: str) -> int:
+def _number(value: Any, path: str) -> float:
     try:
         numeric = float(str(value).strip())
     except (TypeError, ValueError) as exc:
         raise RenderError(f"{path}: expected a number, got {value!r}") from exc
-    return max(0, min(100, round(numeric)))
+    if not isfinite(numeric):
+        raise RenderError(f"{path}: expected a finite number, got {value!r}")
+    return numeric
+
+
+def _percent(value: Any, path: str) -> int:
+    return round(max(0, min(100, _number(value, path))))
 
 
 class PageRenderer:
@@ -193,44 +206,61 @@ class PageRenderer:
         code = row["type"]
         if code == "-":
             return {"y": "-"}
-        context = self._context(states, row.get("entity"))
+        alias = row.get("entity")
+        context = self._context(states, alias)
         result: dict[str, Any] = {"y": code}
-        if code in {"h", "k", "b", "g", "s"}:
-            label_limit = 7 if code == "s" else 27
-            label = self.templates.render(row["label"], context)
-            result["l"] = sanitize_text(label, label_limit, self.text_mode)
-        result["v"] = self._render_value(row, context)
-
-        if code in {"d", "u", "b"}:
-            source = row.get("percent", context["value"])
-            result["p"] = _percent(
-                self.templates.render(source, context), f"{history_key}.percent"
-            )
-        if code == "s":
-            if "values" in row:
-                samples = [float(value) for value in row["values"]][-20:]
-            else:
-                try:
-                    current = float(context["value"])
-                except (TypeError, ValueError) as exc:
-                    raise RenderError(
-                        f"{history_key}: sparkline entity state is not numeric: {context['value']!r}"
-                    ) from exc
-                samples = self.history.append(
-                    history_key, current, row["history_points"]
+        label = ""
+        try:
+            if code in {"h", "k", "b", "g", "s"}:
+                label_limit = 7 if code == "s" else 27
+                # Keep a readable label if its template cannot use the current state.
+                label = sanitize_text(alias or "", label_limit, self.text_mode)
+                label = sanitize_text(
+                    self.templates.render(row["label"], context), label_limit, self.text_mode
                 )
-            low = float(row.get("scale_min", 0))
-            high = float(row.get("scale_max", max(samples + [1.0])))
-            if high <= low:
-                high = low + 1
-            result["w"] = [
-                _percent(100 * (sample - low) / (high - low), history_key)
-                for sample in samples[-20:]
-            ]
-        if "alert" in row:
-            rendered = self.templates.render(row["alert"], context)
-            result["a"] = int(_as_bool(rendered, f"{history_key}.alert"))
-        return result
+                result["l"] = label
+            if alias and (
+                context["entity"] is None
+                or not context["available"]
+                or not context["value"].strip()
+            ):
+                raise RenderError(f"{history_key}: missing state for {alias!r}")
+            result["v"] = self._render_value(row, context)
+            if "alert" in row:
+                rendered = self.templates.render(row["alert"], context)
+                result["a"] = int(_as_bool(rendered, f"{history_key}.alert"))
+            if code in {"d", "u", "b"}:
+                source = (
+                    self.templates.render(row["percent"], context)
+                    if "percent" in row
+                    else context["value"]
+                )
+                result["p"] = _percent(source, f"{history_key}.percent")
+            if code == "s":
+                result["w"] = self._sparkline(row, context, history_key)
+            return result
+        except RenderError as exc:
+            LOGGER.debug("%s: displaying N/A: %s", history_key, exc)
+            return {"y": "k", "l": label, "v": "N/A"}
+
+    def _sparkline(
+        self, row: dict[str, Any], context: dict[str, Any], history_key: str
+    ) -> list[int]:
+        if "values" in row:
+            samples = [float(value) for value in row["values"]][-20:]
+        else:
+            current = _number(context["value"], history_key)
+            samples = self.history.append(history_key, current, row["history_points"])
+        low = float(row.get("scale_min", 0))
+        high = float(row.get("scale_max", max(samples + [1.0])))
+        if high <= low:
+            high = low + 1
+            if high == low:
+                return [100 if sample > low else 0 for sample in samples]
+        return [
+            round(100 * ((min(high, max(low, sample)) - low) / (high - low)))
+            for sample in samples[-20:]
+        ]
 
     def render_device(
         self, device: dict[str, Any], states: dict[str, HAState]
